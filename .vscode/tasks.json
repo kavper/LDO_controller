@@ -1,0 +1,47 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "Build",
+            "type": "shell",
+            "command": "cmake",
+            "args": [
+                "--build",
+                "${workspaceFolder}/build/Debug",
+                "-j"
+            ],
+            "problemMatcher": "$gcc"
+        },
+        {
+            "label": "Flash",
+            "type": "shell",
+            "dependsOn": "Build",
+            "command": "/Applications/STMicroelectronics/STM32Cube/STM32CubeProgrammer/STM32CubeProgrammer.app/Contents/Resources/bin/STM32_Programmer_CLI",
+            "args": [
+                "-c",
+                "port=SWD",
+                "-w",
+                "${workspaceFolder}/build/Debug/LDO_controller.elf",
+                "-v",
+                "-rst"
+            ],
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "Erase",
+            "type": "shell",
+            "command": "/Applications/STMicroelectronics/STM32Cube/STM32CubeProgrammer/STM32CubeProgrammer.app/Contents/Resources/bin/STM32_Programmer_CLI",
+            "args": [
+                "-c",
+                "port=SWD",
+                "-e",
+                "all"
+            ],
+            "problemMatcher": []
+        }
+    ]
+}
