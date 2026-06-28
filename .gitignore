@@ -1,3 +1,38 @@
-build
-mx.scratch
-!.settings
+# Build folders
+build/
+cmake-build-*/
+Debug/
+Release/
+
+# CMake generated files
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+compile_commands.json
+
+# VS Code local settings
+.vscode/ipch/
+.vscode/.browse.c_cpp.db*
+.vscode/*.log
+
+# macOS
+.DS_Store
+
+# STM32CubeMX backups
+*.bak
+
+# Generated binary outputs
+*.elf
+*.bin
+*.hex
+*.map
+*.list
+*.su
+*.o
+*.obj
+*.a
+*.d
+
+# Temporary files
+*.tmp
+*.log
