@@ -36,11 +36,19 @@ Setpoints are not retained across reset. While the output is enabled, the
 console forces it off on:
 
 - ADC or DAC initialization failure
-- deasserted 5 V PGOOD
-- VIN below 6 V
-- any temperature at or above 60 C
-- VOUT more than 0.75 V above the requested value
-- DAC CV or CC readback error greater than 30 mV after settling
+- deasserted 5 V PGOOD for at least 50 ms
+- VIN below 6 V for at least 250 ms
+- any temperature at or above 60 C for at least 500 ms
+- VOUT above the request by at least 1.5 V (or 10%, whichever is greater)
+  for at least 100 ms
+- a severe VOUT excursion above the request by at least 3 V (or 20%,
+  whichever is greater) for at least 10 ms
+- DAC CV or CC readback error greater than 75 mV for at least 300 ms,
+  checked only after a 750 ms settling interval
+
+The confirmation times deliberately reject isolated samples and normal
+CC-to-CV recovery transients after a load is disconnected. They do not disable
+the protection for a sustained fault.
 
 The `IOUT` field intentionally reports `N/A (no U18)`. The analog current-limit
 loop is active, but actual output-current telemetry cannot be trusted until U18

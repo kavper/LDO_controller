@@ -17,7 +17,7 @@
 #define UART_MAX_FRAME               (2U + 1U + UART_MAX_LENGTH + 2U)
 #define UART_RX_RING_SIZE            256U
 #define UART_TX_QUEUE_DEPTH          4U
-#define UART_TX_BUFFER_SIZE          1280U
+#define UART_TX_BUFFER_SIZE          1536U
 #define UART_TEXT_LINE_SIZE          96U
 #define UART_TEXT_LINE_QUEUE_DEPTH   4U
 
