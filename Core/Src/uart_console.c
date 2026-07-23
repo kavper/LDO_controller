@@ -437,17 +437,21 @@ void UART_Console_QueueStatus(void)
 
 static void console_ack_set(uint32_t voltage_mV, uint32_t current_mA)
 {
-  char response[112];
+  const bool output_enabled = Control_GetStatus()->output_enabled;
+  char response[144];
 
   (void)snprintf(
       response, sizeof(response),
-      "ACK SET V=%lu.%03luV I=%lu.%03luA CV_CODE=%u CC_CODE=%u\r\n",
+      "ACK SET V=%lu.%03luV I=%lu.%03luA CV_CODE=%u CC_CODE=%u "
+      "OUTPUT=%s%s\r\n",
       (unsigned long)(voltage_mV / 1000U),
       (unsigned long)(voltage_mV % 1000U),
       (unsigned long)(current_mA / 1000U),
       (unsigned long)(current_mA % 1000U),
       (unsigned int)Control_VoltageToDacRaw(voltage_mV),
-      (unsigned int)Control_CurrentToDacRaw(current_mA));
+      (unsigned int)Control_CurrentToDacRaw(current_mA),
+      output_enabled ? "ON" : "OFF",
+      output_enabled ? "" : " (SEND OUT ON)");
   (void)UART_Protocol_QueueText(response);
 }
 
@@ -484,17 +488,40 @@ static bool console_parse_set(const char *line, uint32_t *voltage_mV,
   return *cursor == '\0';
 }
 
+static void console_normalize_line(char *line)
+{
+  size_t read_index = 0U;
+  size_t write_index = 0U;
+  bool pending_space = false;
+
+  while (line[read_index] != '\0')
+  {
+    unsigned char character = (unsigned char)line[read_index++];
+
+    if (isspace(character) != 0)
+    {
+      if (write_index > 0U)
+      {
+        pending_space = true;
+      }
+      continue;
+    }
+    if (pending_space)
+    {
+      line[write_index++] = ' ';
+      pending_space = false;
+    }
+    line[write_index++] = (char)toupper(character);
+  }
+  line[write_index] = '\0';
+}
+
 static void console_handle_line(char *line, uint32_t now)
 {
   uint32_t voltage_mV;
   uint32_t current_mA;
   const char *fault;
-  uint8_t index;
-
-  for (index = 0U; line[index] != '\0'; ++index)
-  {
-    line[index] = (char)toupper((unsigned char)line[index]);
-  }
+  console_normalize_line(line);
 
   if (console_parse_set(line, &voltage_mV, &current_mA))
   {
@@ -514,7 +541,10 @@ static void console_handle_line(char *line, uint32_t now)
     return;
   }
 
-  if (strcmp(line, "OUT ON") == 0)
+  if ((strcmp(line, "OUT ON") == 0)
+      || (strcmp(line, "OUTPUT ON") == 0)
+      || (strcmp(line, "OUT=ON") == 0)
+      || (strcmp(line, "ON") == 0))
   {
     if (Control_GetStatus()->output_enabled)
     {
@@ -538,7 +568,10 @@ static void console_handle_line(char *line, uint32_t now)
     return;
   }
 
-  if (strcmp(line, "OUT OFF") == 0)
+  if ((strcmp(line, "OUT OFF") == 0)
+      || (strcmp(line, "OUTPUT OFF") == 0)
+      || (strcmp(line, "OUT=OFF") == 0)
+      || (strcmp(line, "OFF") == 0))
   {
     Control_SetOutputEnabled(false);
     s_fault = "NONE";
@@ -561,8 +594,14 @@ static void console_handle_line(char *line, uint32_t now)
     return;
   }
 
-  (void)UART_Protocol_QueueText(
-      "NACK UNKNOWN; use: SET V=5.000 I=0.100 | OUT ON | OUT OFF | STATUS | HELP\r\n");
+  {
+    char response[160];
+    (void)snprintf(
+        response, sizeof(response),
+        "NACK UNKNOWN CMD=\"%.80s\"; USE SET ... | OUT ON | OUT OFF | STATUS | HELP\r\n",
+        line);
+    (void)UART_Protocol_QueueText(response);
+  }
 }
 
 void UART_Console_Init(bool mcp_ok, bool dac_ok)

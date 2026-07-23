@@ -15,6 +15,7 @@ HELP
 
 - `SET` accepts volts and amperes with up to three decimal places. It updates
   the requested voltage and analog current limit but does not enable the output.
+  Its ACK explicitly reports `OUTPUT=OFF (SEND OUT ON)` when appropriate.
 - `OUT ON` enables the output only after the ADC/DAC, PGOOD, VIN, VOUT and
   temperature preflight checks pass.
 - `OUT OFF` disables the power stage immediately; the DAC setpoints then ramp
@@ -23,6 +24,10 @@ HELP
   once per second.
 - Every valid command returns `ACK`; malformed, out-of-range or unsafe commands
   return `NACK` with a reason.
+
+Command matching is case-insensitive, ignores leading/trailing whitespace and
+collapses repeated spaces or tabs. `ON`, `OUTPUT ON` and `OUT=ON` are accepted
+aliases for `OUT ON`; equivalent aliases are available for OFF.
 
 The accepted ranges are 0.000 to 27.000 V and 0.000 to 5.000 A. The voltage
 limit reflects the 160 kOhm / 17.4 kOhm CV network and the 3.000 V DAC
