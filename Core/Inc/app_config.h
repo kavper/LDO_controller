@@ -76,12 +76,13 @@
 
 /*
  * Analog measurement paths from the board schematic/BOM.
- * CURRENT_SENSE_AMPLIFIER_GAIN = 11 assumes R84 fitted and R87 not fitted.
- * If R87 is used instead, the gain is 10. Never fit both: that bypasses R69.
+ * The assembled board has R87 fitted and R84 not fitted, giving current gain
+ * x10. Never fit both: that would bypass the R69 current-sense shunt.
+ * IOUT readings are invalid until the missing U18 amplifier is populated.
  */
 #define VOLTAGE_SENSE_INPUT_RESISTANCE_OHM   160000L
 #define VOLTAGE_SENSE_FEEDBACK_RESISTANCE_OHM 17400L
 #define CURRENT_SENSE_SHUNT_MILLIOHM         50L
-#define CURRENT_SENSE_AMPLIFIER_GAIN         11L
+#define CURRENT_SENSE_AMPLIFIER_GAIN         10L
 
 #endif /* APP_CONFIG_H */

@@ -88,20 +88,22 @@ Consequently:
 
 `Vsense = ADC_code * 0.841864 mV`, before offset and gain correction.
 
-R69 is a 50 milliohm Kelvin shunt. With R84 fitted and R87 not fitted, U18 has
-gain 11:
+R69 is a 50 milliohm Kelvin shunt. The assembled board has R87 fitted and R84
+not fitted, so U18 has gain 10:
 
-`Vadc = Iout * 50 milliohm * 11`
+`Vadc = Iout * 50 milliohm * 10`
 
-`Iout = ADC_code * 0.166460 mA`, before offset and gain correction.
+`Iout = ADC_code * 0.183105 mA`, before offset and gain correction.
 
 Important assembly condition:
 
-- R84 only: current gain is 11; the firmware setting is correct.
-- R87 only: current gain is 10 and the nominal factor is 0.183105 mA/code.
+- R84 only: current gain is 11 and the nominal factor is 0.166460 mA/code.
+- R87 only: current gain is 10 and the nominal factor is 0.183105 mA/code;
+  this is the confirmed assembled-board configuration and firmware setting.
 - R84 and R87 together: R69 is bypassed through RGND and current measurement
   is invalid.
 
 The generated BOM lists both R84 and R87 in the zero-ohm resistor group even
 though the schematic says to fit only one. The physical board must be checked
-before enabling the power stage.
+before enabling the power stage. Current readings are also invalid until the
+missing U18 amplifier is populated.
