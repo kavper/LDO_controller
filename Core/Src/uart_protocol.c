@@ -17,6 +17,9 @@
 #define UART_MAX_FRAME               (2U + 1U + UART_MAX_LENGTH + 2U)
 #define UART_RX_RING_SIZE            256U
 #define UART_TX_QUEUE_DEPTH          4U
+#define UART_TX_BUFFER_SIZE          1280U
+#define UART_TEXT_LINE_SIZE          96U
+#define UART_TEXT_LINE_QUEUE_DEPTH   4U
 
 typedef enum
 {
@@ -30,9 +33,15 @@ typedef enum
 
 typedef struct
 {
-  uint8_t data[UART_MAX_FRAME];
+  uint8_t data[UART_TX_BUFFER_SIZE];
   uint16_t length;
 } TxFrame_t;
+
+typedef enum
+{
+  UART_MODE_BINARY = 0U,
+  UART_MODE_TEXT
+} UartMode_t;
 
 static UART_HandleTypeDef *s_uart;
 static uint8_t s_uart_rx_byte;
@@ -54,6 +63,12 @@ static uint8_t s_rx_body_index;
 static uint16_t s_rx_crc;
 static uint16_t s_rx_received_crc;
 static uint8_t s_telemetry_sequence;
+static UartMode_t s_mode;
+static char s_text_build[UART_TEXT_LINE_SIZE];
+static uint8_t s_text_build_length;
+static char s_text_lines[UART_TEXT_LINE_QUEUE_DEPTH][UART_TEXT_LINE_SIZE];
+static uint8_t s_text_line_head;
+static uint8_t s_text_line_tail;
 
 static uint16_t uart_crc16_update(uint16_t crc, uint8_t byte)
 {
@@ -266,13 +281,59 @@ static void uart_parse_byte(uint8_t byte)
   }
 }
 
+static void uart_parse_text_byte(uint8_t byte)
+{
+  if ((byte == '\r') || (byte == '\n'))
+  {
+    uint8_t next_head;
+
+    if (s_text_build_length == 0U)
+    {
+      return;
+    }
+    next_head = (uint8_t)((s_text_line_head + 1U)
+                          % UART_TEXT_LINE_QUEUE_DEPTH);
+    if (next_head != s_text_line_tail)
+    {
+      s_text_build[s_text_build_length] = '\0';
+      memcpy(s_text_lines[s_text_line_head], s_text_build,
+             (size_t)s_text_build_length + 1U);
+      s_text_line_head = next_head;
+    }
+    s_text_build_length = 0U;
+    return;
+  }
+
+  if ((byte == '\b') || (byte == 0x7FU))
+  {
+    if (s_text_build_length > 0U)
+    {
+      --s_text_build_length;
+    }
+    return;
+  }
+
+  if ((byte >= 0x20U) && (byte <= 0x7EU)
+      && (s_text_build_length < (UART_TEXT_LINE_SIZE - 1U)))
+  {
+    s_text_build[s_text_build_length++] = (char)byte;
+  }
+}
+
 static void uart_rx_task(void)
 {
   while (s_rx_tail != s_rx_head)
   {
     uint8_t byte = s_rx_ring[s_rx_tail];
     s_rx_tail = (uint16_t)((s_rx_tail + 1U) % UART_RX_RING_SIZE);
-    uart_parse_byte(byte);
+    if (s_mode == UART_MODE_TEXT)
+    {
+      uart_parse_text_byte(byte);
+    }
+    else
+    {
+      uart_parse_byte(byte);
+    }
   }
 
   if (s_rx_rearm_pending && (s_uart != NULL))
@@ -341,9 +402,10 @@ void UART_Protocol_QueueTelemetry(void)
                          (uint8_t)index);
 }
 
-void UART_Protocol_Init(UART_HandleTypeDef *huart)
+static void uart_init(UART_HandleTypeDef *huart, UartMode_t mode)
 {
   s_uart = huart;
+  s_mode = mode;
   s_rx_head = 0U;
   s_rx_tail = 0U;
   s_rx_rearm_pending = false;
@@ -352,7 +414,11 @@ void UART_Protocol_Init(UART_HandleTypeDef *huart)
   s_tx_active = false;
   s_tx_complete = false;
   s_telemetry_sequence = 0U;
+  s_text_build_length = 0U;
+  s_text_line_head = 0U;
+  s_text_line_tail = 0U;
   memset(s_tx_queue, 0, sizeof(s_tx_queue));
+  memset(s_text_lines, 0, sizeof(s_text_lines));
   uart_parser_reset();
 
   HAL_NVIC_SetPriority(USART2_IRQn, 1U, 0U);
@@ -361,6 +427,65 @@ void UART_Protocol_Init(UART_HandleTypeDef *huart)
   {
     s_rx_rearm_pending = true;
   }
+}
+
+void UART_Protocol_Init(UART_HandleTypeDef *huart)
+{
+  uart_init(huart, UART_MODE_BINARY);
+}
+
+void UART_Protocol_InitText(UART_HandleTypeDef *huart)
+{
+  uart_init(huart, UART_MODE_TEXT);
+}
+
+bool UART_Protocol_QueueText(const char *text)
+{
+  uint8_t next_head;
+  TxFrame_t *frame;
+  size_t length;
+
+  if ((text == NULL) || (s_mode != UART_MODE_TEXT))
+  {
+    return false;
+  }
+  length = strlen(text);
+  if ((length == 0U) || (length >= UART_TX_BUFFER_SIZE))
+  {
+    return false;
+  }
+  next_head = (uint8_t)((s_tx_head + 1U) % UART_TX_QUEUE_DEPTH);
+  if (next_head == s_tx_tail)
+  {
+    return false;
+  }
+  frame = &s_tx_queue[s_tx_head];
+  memcpy(frame->data, text, length);
+  frame->length = (uint16_t)length;
+  s_tx_head = next_head;
+  return true;
+}
+
+bool UART_Protocol_ReadLine(char *line, size_t capacity)
+{
+  size_t length;
+
+  if ((line == NULL) || (capacity == 0U)
+      || (s_mode != UART_MODE_TEXT)
+      || (s_text_line_tail == s_text_line_head))
+  {
+    return false;
+  }
+  length = strlen(s_text_lines[s_text_line_tail]);
+  if (length >= capacity)
+  {
+    length = capacity - 1U;
+  }
+  memcpy(line, s_text_lines[s_text_line_tail], length);
+  line[length] = '\0';
+  s_text_line_tail = (uint8_t)((s_text_line_tail + 1U)
+                               % UART_TEXT_LINE_QUEUE_DEPTH);
+  return true;
 }
 
 void UART_Protocol_Task(void)

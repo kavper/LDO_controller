@@ -43,21 +43,30 @@ static uint32_t control_ramp(uint32_t actual, uint32_t target, uint32_t step)
   return actual;
 }
 
-static uint16_t control_voltage_to_dac_raw(uint32_t voltage_mV)
+uint16_t Control_VoltageToDacRaw(uint32_t voltage_mV)
 {
-  /*
-   * TODO: replace with calibrated CV analog-path scaling. Returning zero is
-   * intentionally fail-safe until the resistor network and amplifier gain are known.
-   */
-  (void)voltage_mV;
-  return 0U;
+  uint64_t numerator = (uint64_t)voltage_mV
+                     * VOLTAGE_SENSE_FEEDBACK_RESISTANCE_OHM * UINT16_MAX;
+  uint64_t denominator = (uint64_t)VOLTAGE_SENSE_INPUT_RESISTANCE_OHM
+                       * MCP3464_EXTERNAL_VREF_MV;
+
+  return (uint16_t)((numerator + (denominator / 2ULL)) / denominator);
 }
 
-static uint16_t control_current_to_dac_raw(uint32_t current_mA)
+uint16_t Control_CurrentToDacRaw(uint32_t current_mA)
 {
-  /* TODO: replace with calibrated CC shunt/amplifier-path scaling. */
-  (void)current_mA;
-  return 0U;
+  uint64_t numerator = (uint64_t)current_mA
+                     * CURRENT_SENSE_SHUNT_MILLIOHM
+                     * CURRENT_LIMIT_AMPLIFIER_GAIN * UINT16_MAX;
+  uint64_t denominator = 1000ULL * MCP3464_EXTERNAL_VREF_MV;
+
+  return (uint16_t)((numerator + (denominator / 2ULL)) / denominator);
+}
+
+uint32_t Control_DacRawToMillivolts(uint16_t raw)
+{
+  return (uint32_t)(((uint64_t)raw * MCP3464_EXTERNAL_VREF_MV
+                     + (UINT16_MAX / 2U)) / UINT16_MAX);
 }
 
 static void control_update_mode(void)
@@ -87,8 +96,8 @@ static void control_update_mode(void)
 
 static void control_update_dac(void)
 {
-  uint16_t cv_raw = control_voltage_to_dac_raw(s_status.voltage_applied_mV);
-  uint16_t cc_raw = control_current_to_dac_raw(s_status.current_applied_mA);
+  uint16_t cv_raw = Control_VoltageToDacRaw(s_status.voltage_applied_mV);
+  uint16_t cc_raw = Control_CurrentToDacRaw(s_status.current_applied_mA);
   bool update = false;
 
   if (cv_raw != s_last_cv_raw)

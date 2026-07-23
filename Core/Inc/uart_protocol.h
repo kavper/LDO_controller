@@ -2,6 +2,8 @@
 #define UART_PROTOCOL_H
 
 #include "stm32g0xx_hal.h"
+#include <stdbool.h>
+#include <stddef.h>
 #include <stdint.h>
 
 #define UART_PROTOCOL_SOF1 0xA5U
@@ -41,7 +43,10 @@ typedef enum
  */
 
 void UART_Protocol_Init(UART_HandleTypeDef *huart);
+void UART_Protocol_InitText(UART_HandleTypeDef *huart);
 void UART_Protocol_Task(void);
 void UART_Protocol_QueueTelemetry(void);
+bool UART_Protocol_QueueText(const char *text);
+bool UART_Protocol_ReadLine(char *line, size_t capacity);
 
 #endif /* UART_PROTOCOL_H */

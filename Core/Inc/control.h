@@ -28,5 +28,8 @@ void Control_SetVoltageTarget(uint32_t voltage_mV);
 void Control_SetCurrentTarget(uint32_t current_mA);
 void Control_SetOutputEnabled(bool enabled);
 const Control_Status_t *Control_GetStatus(void);
+uint16_t Control_VoltageToDacRaw(uint32_t voltage_mV);
+uint16_t Control_CurrentToDacRaw(uint32_t current_mA);
+uint32_t Control_DacRawToMillivolts(uint16_t raw);
 
 #endif /* CONTROL_H */

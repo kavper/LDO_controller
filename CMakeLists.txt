@@ -53,6 +53,7 @@ target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     Core/Src/measurements.c
     Core/Src/output_ctrl.c
     Core/Src/uart_protocol.c
+    Core/Src/uart_console.c
 )
 
 # Add include paths

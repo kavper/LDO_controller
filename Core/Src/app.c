@@ -9,6 +9,7 @@
 #include "mcp3464.h"
 #include "output_ctrl.h"
 #include "spi.h"
+#include "uart_console.h"
 #include "uart_protocol.h"
 #include "usart.h"
 
@@ -51,6 +52,10 @@ static uint32_t s_uart_tick;
 
 #if APP_BRINGUP_STAGE >= 2U
 static uint32_t s_led_tick;
+#endif
+
+#if APP_BRINGUP_STAGE == 6U
+static uint32_t s_control_tick;
 #endif
 
 #if APP_BRINGUP_STAGE == 2U
@@ -277,7 +282,7 @@ static void app_bringup_stage3_sweep_task(uint32_t now)
 }
 #endif
 
-#if APP_BRINGUP_STAGE >= 4U
+#if (APP_BRINGUP_STAGE == 4U) || (APP_BRINGUP_STAGE == 5U)
 static uint32_t app_bringup_temperature_magnitude(int32_t centi_C)
 {
   return (uint32_t)((centi_C < 0) ? -(int64_t)centi_C : (int64_t)centi_C);
@@ -595,9 +600,12 @@ void APP_Init(void)
 #elif APP_BRINGUP_STAGE == 4U
   static const char banner[] =
       "\r\nLDO BRINGUP STAGE 4: ALL ADC PHYSICAL UNITS; OUTPUT=OFF\r\n";
-#else
+#elif APP_BRINGUP_STAGE == 5U
   static const char banner[] =
       "\r\nLDO BRINGUP STAGE 5: GUARDED 5V/100mA OUTPUT\r\n";
+#else
+  static const char banner[] =
+      "\r\nLDO STAGE 6: INTERACTIVE UART CONSOLE; OUTPUT=OFF\r\n";
 #endif
 
   app_bringup_led_init();
@@ -612,6 +620,11 @@ void APP_Init(void)
   app_bringup_stage3_init();
 #if APP_BRINGUP_STAGE == 5U
   app_bringup_stage5_init(now);
+#elif APP_BRINGUP_STAGE == 6U
+  Control_Init();
+  UART_Protocol_InitText(&huart2);
+  UART_Console_Init(s_mcp_ok, s_dac_ok);
+  s_control_tick = now;
 #endif
 #endif
   app_bringup_uart_write(banner, (uint16_t)(sizeof(banner) - 1U));
@@ -667,6 +680,41 @@ void APP_Task(void)
     Measurements_Task();
   }
   app_bringup_stage3_sweep_task(now);
+#elif APP_BRINGUP_STAGE == 6U
+  uint8_t catch_up = 0U;
+
+  now = HAL_GetTick();
+  if ((uint32_t)(now - s_led_tick) >= 500U)
+  {
+    s_led_tick = now;
+    HAL_GPIO_TogglePin(BOARD_LED_GPIO_PORT, BOARD_LED_PIN);
+  }
+  if (s_mcp_ok)
+  {
+    Measurements_Task();
+  }
+  UART_Protocol_Task();
+
+  while (((uint32_t)(now - s_control_tick) >= APP_CONTROL_PERIOD_MS)
+         && (catch_up < 10U))
+  {
+    s_control_tick += APP_CONTROL_PERIOD_MS;
+    Control_Task1ms();
+    Bleeder_Task1ms();
+    ++catch_up;
+  }
+  if ((uint32_t)(now - s_control_tick) >= APP_CONTROL_PERIOD_MS)
+  {
+    s_control_tick = now;
+  }
+
+  UART_Console_Task(now);
+  if ((uint32_t)(now - s_uart_tick) >= CONSOLE_STATUS_PERIOD_MS)
+  {
+    s_uart_tick = now;
+    UART_Console_QueueStatus();
+  }
+  UART_Protocol_Task();
 #elif APP_BRINGUP_STAGE >= 4U
   now = HAL_GetTick();
   if ((uint32_t)(now - s_led_tick) >= 500U)

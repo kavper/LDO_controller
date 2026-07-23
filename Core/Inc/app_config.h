@@ -10,17 +10,18 @@
  *   3 - MCP3464 verification + low-level DAC8562/readback test
  *   4 - continuous ADC diagnostics in physical units (power output stays off)
  *   5 - guarded 5 V / 100 mA power-stage test
+ *   6 - interactive ASCII UART console with guarded output control
  *   0 - normal controller application
  *
  * Keep the active stage enabled until its hardware has been verified.
  */
-#define APP_BRINGUP_STAGE                   5U
+#define APP_BRINGUP_STAGE                   6U
 #define BOARD_LED_GPIO_PORT                 GPIOB
 #define BOARD_LED_PIN                       GPIO_PIN_0
 
 /* User-facing setpoint limits. */
 #define APP_VOLTAGE_MIN_MV                 0U
-#define APP_VOLTAGE_MAX_MV                 30000U
+#define APP_VOLTAGE_MAX_MV                 27000U
 #define APP_CURRENT_MIN_MA                 0U
 #define APP_CURRENT_MAX_MA                 5000U
 
@@ -99,6 +100,16 @@
 #define VOLTAGE_SENSE_FEEDBACK_RESISTANCE_OHM 17400L
 #define CURRENT_SENSE_SHUNT_MILLIOHM         50L
 #define CURRENT_SENSE_AMPLIFIER_GAIN         10L
+/* U17A analog current-limit path: 1 + R72/R75 = 1 + 100k/10k = 11. */
+#define CURRENT_LIMIT_AMPLIFIER_GAIN          11L
+
+/* Interactive console safety thresholds. */
+#define CONSOLE_STATUS_PERIOD_MS            1000U
+#define CONSOLE_MINIMUM_VIN_MV              6000U
+#define CONSOLE_MAXIMUM_TEMPERATURE_CENTI_C 6000L
+#define CONSOLE_VOUT_OVERSHOOT_MV            750U
+#define CONSOLE_DAC_READBACK_TOLERANCE_MV     30U
+#define CONSOLE_DAC_SETTLE_MS                 300U
 
 /*
  * Stage-5 fixed first-power test. With R87 fitted, U17A produces -11 times
