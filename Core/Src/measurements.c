@@ -89,7 +89,7 @@ static int32_t measurements_apply_calibration(int32_t raw, int32_t zero_raw,
 static uint32_t measurements_vout_raw_to_mV(int32_t raw)
 {
   int32_t calibrated = measurements_apply_calibration(
-      raw, MCP3464_VOUT_ZERO_RAW, MCP3464_COMMON_GAIN_PPM);
+      raw, MCP3464_VOUT_ZERO_RAW, MCP3464_VOUT_GAIN_PPM);
   int64_t numerator;
   int64_t denominator;
 
@@ -108,7 +108,7 @@ static uint32_t measurements_vout_raw_to_mV(int32_t raw)
 static uint32_t measurements_iout_raw_to_mA(int32_t raw)
 {
   int32_t calibrated = measurements_apply_calibration(
-      raw, MCP3464_IOUT_ZERO_RAW, MCP3464_COMMON_GAIN_PPM);
+      raw, MCP3464_IOUT_ZERO_RAW, MCP3464_IOUT_GAIN_PPM);
   int64_t numerator;
   int64_t denominator;
 
@@ -126,7 +126,7 @@ static uint32_t measurements_iout_raw_to_mA(int32_t raw)
 static uint32_t measurements_vin_raw_to_mV(int32_t raw)
 {
   int32_t calibrated = measurements_apply_calibration(
-      raw, MCP3464_VIN_ZERO_RAW, MCP3464_COMMON_GAIN_PPM);
+      raw, MCP3464_VIN_ZERO_RAW, MCP3464_VIN_GAIN_PPM);
   int64_t numerator;
   int64_t denominator;
 

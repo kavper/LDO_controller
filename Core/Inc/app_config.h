@@ -76,12 +76,14 @@
 #define TEMPERATURE_NTC_BETA_NCP18_K        3434U
 
 /*
- * Stage-3 board calibration, calculated from 70 DAC-to-ADC loopback samples.
- * Gain values are expressed in ppm relative to the ideal transfer function.
- * The common gain is the mean of the CC and CV loopback slopes and is used
- * provisionally for VOUT, IOUT and VIN until an external meter calibration.
+ * Board calibration. Gain values are expressed in ppm relative to the ideal
+ * transfer function. VIN and VOUT were calibrated independently against an
+ * external DMM at five points on 2026-07-23. IOUT remains provisional until
+ * the missing U18 current-sense amplifier is populated.
  */
-#define MCP3464_COMMON_GAIN_PPM              995896L
+#define MCP3464_VIN_GAIN_PPM                 1001323L
+#define MCP3464_VOUT_GAIN_PPM                1004656L
+#define MCP3464_IOUT_GAIN_PPM                995896L
 #define MCP3464_DAC_CC_GAIN_PPM              998688L
 #define MCP3464_DAC_CV_GAIN_PPM              993103L
 #define MCP3464_VOUT_ZERO_RAW                (-12L)
@@ -89,6 +91,14 @@
 #define MCP3464_VIN_ZERO_RAW                 (-7L)
 #define MCP3464_DAC_CC_ZERO_RAW              (-3L)
 #define MCP3464_DAC_CV_ZERO_RAW              (-3L)
+
+/*
+ * Complete CV output-path calibration against the same DMM:
+ *   Vout = 0.990295342 * nominal_DAC_voltage + 8.231677 mV
+ * Control_VoltageToDacRaw() applies the inverse transfer function.
+ */
+#define CV_OUTPUT_GAIN_PPM                   990295L
+#define CV_OUTPUT_OFFSET_UV                  8232L
 
 /*
  * Analog measurement paths from the board schematic/BOM.

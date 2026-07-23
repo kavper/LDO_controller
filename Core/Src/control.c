@@ -45,10 +45,23 @@ static uint32_t control_ramp(uint32_t actual, uint32_t target, uint32_t step)
 
 uint16_t Control_VoltageToDacRaw(uint32_t voltage_mV)
 {
-  uint64_t numerator = (uint64_t)voltage_mV
-                     * VOLTAGE_SENSE_FEEDBACK_RESISTANCE_OHM * UINT16_MAX;
-  uint64_t denominator = (uint64_t)VOLTAGE_SENSE_INPUT_RESISTANCE_OHM
-                       * MCP3464_EXTERNAL_VREF_MV;
+  int64_t desired_uV = (int64_t)voltage_mV * 1000LL;
+  int64_t corrected_uV;
+  uint64_t numerator;
+  uint64_t denominator;
+
+  if (desired_uV <= CV_OUTPUT_OFFSET_UV)
+  {
+    return 0U;
+  }
+
+  corrected_uV = ((desired_uV - CV_OUTPUT_OFFSET_UV) * 1000000LL
+                  + (CV_OUTPUT_GAIN_PPM / 2L))
+               / CV_OUTPUT_GAIN_PPM;
+  numerator = (uint64_t)corrected_uV
+            * VOLTAGE_SENSE_FEEDBACK_RESISTANCE_OHM * UINT16_MAX;
+  denominator = (uint64_t)VOLTAGE_SENSE_INPUT_RESISTANCE_OHM
+              * MCP3464_EXTERNAL_VREF_MV * 1000ULL;
 
   return (uint16_t)((numerator + (denominator / 2ULL)) / denominator);
 }

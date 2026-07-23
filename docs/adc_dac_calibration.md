@@ -39,7 +39,7 @@ The firmware uses:
 - MCP3464 digital GAINCAL: 31425/32768 = 0.9590149
 - final CC loopback gain after GAINCAL: 0.998688
 - final CV loopback gain after GAINCAL: 0.993103
-- provisional common ADC gain for VIN/VOUT: 0.995896
+- provisional common ADC gain used before external calibration: 0.995896
 - measured post-GAINCAL zero offsets: VOUT -12, IOUT +14, VIN -7 ADC codes
 
 After calibration, live UART results were:
@@ -54,6 +54,76 @@ After calibration, live UART results were:
 This is a board-level loopback calibration, not an absolute metrology
 calibration. One or more measurements with a calibrated external DMM are
 required to separate ADC gain, DAC gain and the actual `3V_REF` value.
+
+## External DMM calibration
+
+VIN and VOUT were calibrated independently against an external DMM on
+2026-07-23. The MCP3464 data below are post-GAINCAL signed 16-bit codes.
+
+### VIN measurement
+
+| DMM VIN | Mean raw code | Old firmware reading | Residual after calibration |
+|---:|---:|---:|---:|
+| 8.000 V | 9508.9 | 8.044 V | +0.509 mV |
+| 11.000 V | 13076.0 | 11.060 V | -0.446 mV |
+| 14.000 V | 16645.5 | 14.078 V | +0.617 mV |
+| 17.000 V | 20212.5 | 17.092 V | -0.422 mV |
+| 20.000 V | 23781.2 | 20.109 V | -0.031 mV |
+
+The unconstrained least-squares fit is:
+
+`VIN = 0.000840781246 * raw + 0.005347508 V`
+
+Firmware retains the integer zero correction of -7 codes and uses the
+least-squares gain constrained to that zero:
+
+- `MCP3464_VIN_ZERO_RAW = -7`
+- `MCP3464_VIN_GAIN_PPM = 1001323`
+- maximum calibration residual: 0.617 mV
+
+### VOUT measurement and CV output path
+
+| Requested VOUT | Mean raw code | DMM VOUT | ADC fit residual |
+|---:|---:|---:|---:|
+| 1.000 V | 1179.8 | 0.9992 V | -0.516 mV |
+| 3.000 V | 3543.0 | 2.979 V | -0.044 mV |
+| 5.000 V | 5905.8 | 4.959 V | -0.106 mV |
+| 10.000 V | 11815.0 | 9.911 V | -0.419 mV |
+| 15.000 V | 17725.5 | 14.863 V | +0.358 mV |
+
+The unrestricted ADC fit is:
+
+`VOUT = 0.000837929890 * raw + 0.010462092 V`
+
+Firmware retains the integer zero correction of -12 codes and uses:
+
+- `MCP3464_VOUT_ZERO_RAW = -12`
+- `MCP3464_VOUT_GAIN_PPM = 1004656`
+- maximum calibration residual: 0.516 mV
+
+The complete DAC-to-output fit is:
+
+`VOUT = 0.990295342 * requested_voltage + 0.008231677 V`
+
+Its R-squared value is 0.999999991 and the maximum non-linearity of the five
+points relative to the fitted line is 0.708 mV. The firmware applies the
+inverse fit using `CV_OUTPUT_GAIN_PPM = 990295` and
+`CV_OUTPUT_OFFSET_UV = 8232` before calculating the DAC8562 code.
+
+### Post-flash verification
+
+The calibrated firmware was flashed and verified on the same board. VIN was
+left at 20.000 V and the output was unloaded with a 100 mA current limit.
+
+| Requested VOUT | DAC code | Firmware ADC | DMM | Output error |
+|---:|---:|---:|---:|---:|
+| 5.000 V | 11975 | 4.998-4.999 V | 4.999 V | -1 mV |
+| 10.000 V | 23970 | 10.001 V | 10.000 V | 0 mV |
+| 15.000 V | 35964 | 15.000-15.001 V | 15.001 V | +1 mV |
+
+The maximum observed output error after calibration was 1 mV. At the original
+20.000 V VIN calibration point, the updated firmware reported 20.000 V for raw
+code 23781. The output was switched off after verification.
 
 ## Full-range 100-point sweep
 
