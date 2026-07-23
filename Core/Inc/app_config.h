@@ -9,11 +9,12 @@
  *   2 - blinking LED + UART + internal ADC1/PGOOD diagnostics
  *   3 - MCP3464 verification + low-level DAC8562/readback test
  *   4 - continuous ADC diagnostics in physical units (power output stays off)
+ *   5 - guarded 5 V / 100 mA power-stage test
  *   0 - normal controller application
  *
  * Keep the active stage enabled until its hardware has been verified.
  */
-#define APP_BRINGUP_STAGE                   4U
+#define APP_BRINGUP_STAGE                   5U
 #define BOARD_LED_GPIO_PORT                 GPIOB
 #define BOARD_LED_PIN                       GPIO_PIN_0
 
@@ -98,5 +99,24 @@
 #define VOLTAGE_SENSE_FEEDBACK_RESISTANCE_OHM 17400L
 #define CURRENT_SENSE_SHUNT_MILLIOHM         50L
 #define CURRENT_SENSE_AMPLIFIER_GAIN         10L
+
+/*
+ * Stage-5 fixed first-power test. With R87 fitted, U17A produces -11 times
+ * the shunt voltage for the analog CC loop. U18 is not involved in limiting;
+ * it only provides the currently unavailable ADC current readback.
+ */
+#define STAGE5_TARGET_VOUT_MV                5000U
+#define STAGE5_CURRENT_LIMIT_MA               100U
+#define STAGE5_CV_DAC_CODE                  11878U
+#define STAGE5_CC_DAC_CODE                   1201U
+#define STAGE5_EXPECTED_CV_READBACK_MV         544U
+#define STAGE5_EXPECTED_CC_READBACK_MV          55U
+#define STAGE5_DAC_READBACK_TOLERANCE_MV        15U
+#define STAGE5_PREFLIGHT_DELAY_MS             2000U
+/* Zero keeps the validated output enabled continuously until a fault/reset. */
+#define STAGE5_POWER_ON_TIME_MS                   0U
+#define STAGE5_VOUT_OVERVOLTAGE_MV             5500U
+#define STAGE5_MINIMUM_VIN_MV                  6000U
+#define STAGE5_MAXIMUM_TEMPERATURE_CENTI_C     6000L
 
 #endif /* APP_CONFIG_H */

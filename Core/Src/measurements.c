@@ -33,6 +33,7 @@ static const uint32_t s_temperature_channels[MEASUREMENTS_TEMPERATURE_COUNT] =
 
 static Measurements_Data_t s_data;
 static McpMeasurement_t s_mcp_measurement;
+static bool s_mcp_discard_next;
 static uint8_t s_temperature_index;
 static bool s_temperature_conversion_active;
 static bool s_temperature_filter_valid[MEASUREMENTS_TEMPERATURE_COUNT];
@@ -240,10 +241,24 @@ static void measurements_mcp_task(void)
     return;
   }
 
+  /*
+   * A MUX write restarts the continuous conversion. The first IRQ can still
+   * expose the result latched for the previous channel, so discard one full
+   * conversion before accepting data for the newly selected input.
+   */
+  if (s_mcp_discard_next)
+  {
+    s_mcp_discard_next = false;
+    return;
+  }
+
   measurements_store_mcp(raw);
   s_mcp_measurement = (McpMeasurement_t)(((uint32_t)s_mcp_measurement + 1U)
                                         % (uint32_t)MCP_MEAS_COUNT);
-  (void)measurements_select_mcp(s_mcp_measurement);
+  if (measurements_select_mcp(s_mcp_measurement) == HAL_OK)
+  {
+    s_mcp_discard_next = true;
+  }
 
   /* TODO: migrate to MCP3464R Scan mode after settling-time requirements are known. */
 }
@@ -307,6 +322,7 @@ void Measurements_Init(void)
   s_temperature_index = 0U;
   s_temperature_conversion_active = false;
   s_mcp_measurement = MCP_MEAS_VOUT_DIFF;
+  s_mcp_discard_next = true;
 
   (void)HAL_ADCEx_Calibration_Start(&hadc1);
   if (MCP3464_Init(&hspi2) == HAL_OK)

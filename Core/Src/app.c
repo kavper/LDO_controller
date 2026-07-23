@@ -277,7 +277,7 @@ static void app_bringup_stage3_sweep_task(uint32_t now)
 }
 #endif
 
-#if APP_BRINGUP_STAGE == 4U
+#if APP_BRINGUP_STAGE >= 4U
 static uint32_t app_bringup_temperature_magnitude(int32_t centi_C)
 {
   return (uint32_t)((centi_C < 0) ? -(int64_t)centi_C : (int64_t)centi_C);
@@ -288,7 +288,9 @@ static char app_bringup_temperature_sign(int32_t centi_C)
   return (centi_C < 0) ? '-' : '+';
 }
 
-static void app_bringup_stage4_report(void)
+static const char *app_bringup_power_state(void);
+
+static void app_bringup_adc_report(void)
 {
   const Measurements_Data_t *data = Measurements_GetData();
   uint32_t temperature[MEASUREMENTS_TEMPERATURE_COUNT];
@@ -331,7 +333,7 @@ static void app_bringup_stage4_report(void)
   length = snprintf(
       report, sizeof(report),
       "MCP_ADC STATUS=%s ID=%04X CFG=%02X/%02X/%02X/%02X IRQ=%02X "
-      "DAC=%s VIN=%lu.%03luV VOUT=%lu.%03luV "
+      "DAC=%s POWER=%s VIN=%lu.%03luV VOUT=%lu.%03luV "
       "IOUT=N/A(U18_MISSING) DAC_CC=%lu.%03luV DAC_CV=%lu.%03luV\r\n"
       "ADC_RAW STM=%u/%u/%u/%u MCP_VIN=%ld MCP_VOUT=%ld MCP_IOUT=%ld "
       "MCP_CC=%ld MCP_CV=%ld\r\n",
@@ -339,6 +341,7 @@ static void app_bringup_stage4_report(void)
       (unsigned int)s_mcp_config[0], (unsigned int)s_mcp_config[1],
       (unsigned int)s_mcp_config[2], (unsigned int)s_mcp_config[3],
       (unsigned int)s_mcp_config[4], s_dac_ok ? "OK" : "FAIL",
+      app_bringup_power_state(),
       (unsigned long)(data->vin_mV / 1000U),
       (unsigned long)(data->vin_mV % 1000U),
       (unsigned long)(data->vout_mV / 1000U),
@@ -361,6 +364,210 @@ static void app_bringup_stage4_report(void)
     app_bringup_uart_write(report, tx_length);
   }
 }
+
+#if APP_BRINGUP_STAGE == 4U
+static const char *app_bringup_power_state(void)
+{
+  return "OFF_SAFE";
+}
+#endif
+
+#if APP_BRINGUP_STAGE == 5U
+typedef enum
+{
+  STAGE5_STATE_PREFLIGHT = 0U,
+  STAGE5_STATE_POWER_ON,
+  STAGE5_STATE_COMPLETE,
+  STAGE5_STATE_FAULT
+} Stage5_State_t;
+
+static Stage5_State_t s_stage5_state;
+static uint32_t s_stage5_start_tick;
+static uint32_t s_stage5_power_on_tick;
+static const char *s_stage5_fault_reason;
+
+static uint32_t app_bringup_abs_difference_u32(uint32_t first, uint32_t second)
+{
+  return (first >= second) ? (first - second) : (second - first);
+}
+
+static const char *app_bringup_power_state(void)
+{
+  switch (s_stage5_state)
+  {
+    case STAGE5_STATE_PREFLIGHT:
+      return "PREFLIGHT";
+    case STAGE5_STATE_POWER_ON:
+      return "ON_5V_100mA";
+    case STAGE5_STATE_COMPLETE:
+      return "TEST_DONE_OFF";
+    case STAGE5_STATE_FAULT:
+      return s_stage5_fault_reason;
+    default:
+      return "UNKNOWN";
+  }
+}
+
+static void app_bringup_stage5_shutdown(const char *reason,
+                                        Stage5_State_t final_state)
+{
+  OutputCtrl_SetEnabled(false);
+  (void)DAC8562_SetCVRaw(0U);
+  (void)DAC8562_SetCCRaw(0U);
+  DAC8562_LdacPulse();
+  s_stage5_fault_reason = reason;
+  s_stage5_state = final_state;
+}
+
+static bool app_bringup_stage5_temperatures_safe(
+    const Measurements_Data_t *data)
+{
+  uint8_t index;
+
+  for (index = 0U; index < MEASUREMENTS_TEMPERATURE_COUNT; ++index)
+  {
+    if ((data->temperature_centi_C[index] == INT32_MIN)
+        || (data->temperature_centi_C[index]
+            >= STAGE5_MAXIMUM_TEMPERATURE_CENTI_C))
+    {
+      return false;
+    }
+  }
+  return true;
+}
+
+static const char *app_bringup_stage5_preflight_fault(
+    const Measurements_Data_t *data)
+{
+  if (!s_mcp_ok || !s_dac_ok)
+  {
+    return "FAULT_ADC_DAC";
+  }
+  if (HAL_GPIO_ReadPin(PGOOD_5V_IN_GPIO_Port, PGOOD_5V_IN_Pin)
+      != PGOOD_ASSERTED_LEVEL)
+  {
+    return "FAULT_PGOOD";
+  }
+  if (data->vin_mV < STAGE5_MINIMUM_VIN_MV)
+  {
+    return "FAULT_VIN_LOW";
+  }
+  if (data->vout_mV > 100U)
+  {
+    return "FAULT_VOUT_NOT_ZERO";
+  }
+  if (!app_bringup_stage5_temperatures_safe(data))
+  {
+    return "FAULT_TEMPERATURE";
+  }
+  if (app_bringup_abs_difference_u32(
+          data->dac_cv_readback_mV, STAGE5_EXPECTED_CV_READBACK_MV)
+      > STAGE5_DAC_READBACK_TOLERANCE_MV)
+  {
+    return "FAULT_DAC_CV";
+  }
+  if (app_bringup_abs_difference_u32(
+          data->dac_cc_readback_mV, STAGE5_EXPECTED_CC_READBACK_MV)
+      > STAGE5_DAC_READBACK_TOLERANCE_MV)
+  {
+    return "FAULT_DAC_CC";
+  }
+  return NULL;
+}
+
+static const char *app_bringup_stage5_runtime_fault(
+    const Measurements_Data_t *data)
+{
+  if (HAL_GPIO_ReadPin(PGOOD_5V_IN_GPIO_Port, PGOOD_5V_IN_Pin)
+      != PGOOD_ASSERTED_LEVEL)
+  {
+    return "FAULT_PGOOD";
+  }
+  if (data->vin_mV < STAGE5_MINIMUM_VIN_MV)
+  {
+    return "FAULT_VIN_LOW";
+  }
+  if (data->vout_mV > STAGE5_VOUT_OVERVOLTAGE_MV)
+  {
+    return "FAULT_VOUT_OV";
+  }
+  if (!app_bringup_stage5_temperatures_safe(data))
+  {
+    return "FAULT_TEMPERATURE";
+  }
+  if (app_bringup_abs_difference_u32(
+          data->dac_cv_readback_mV, STAGE5_EXPECTED_CV_READBACK_MV)
+      > STAGE5_DAC_READBACK_TOLERANCE_MV)
+  {
+    return "FAULT_DAC_CV";
+  }
+  if (app_bringup_abs_difference_u32(
+          data->dac_cc_readback_mV, STAGE5_EXPECTED_CC_READBACK_MV)
+      > STAGE5_DAC_READBACK_TOLERANCE_MV)
+  {
+    return "FAULT_DAC_CC";
+  }
+  return NULL;
+}
+
+static void app_bringup_stage5_init(uint32_t now)
+{
+  s_stage5_state = STAGE5_STATE_PREFLIGHT;
+  s_stage5_start_tick = now;
+  s_stage5_power_on_tick = 0U;
+  s_stage5_fault_reason = "FAULT_UNKNOWN";
+
+  if (!s_mcp_ok || !s_dac_ok
+      || (DAC8562_SetCVRaw(STAGE5_CV_DAC_CODE) != HAL_OK)
+      || (DAC8562_SetCCRaw(STAGE5_CC_DAC_CODE) != HAL_OK))
+  {
+    app_bringup_stage5_shutdown("FAULT_DAC_WRITE", STAGE5_STATE_FAULT);
+    return;
+  }
+  DAC8562_LdacPulse();
+}
+
+static void app_bringup_stage5_task(uint32_t now)
+{
+  const Measurements_Data_t *data = Measurements_GetData();
+  const char *fault;
+
+  if (s_stage5_state == STAGE5_STATE_PREFLIGHT)
+  {
+    if ((uint32_t)(now - s_stage5_start_tick) < STAGE5_PREFLIGHT_DELAY_MS)
+    {
+      return;
+    }
+    fault = app_bringup_stage5_preflight_fault(data);
+    if (fault != NULL)
+    {
+      app_bringup_stage5_shutdown(fault, STAGE5_STATE_FAULT);
+      return;
+    }
+    OutputCtrl_SetEnabled(true);
+    s_stage5_power_on_tick = now;
+    s_stage5_state = STAGE5_STATE_POWER_ON;
+    return;
+  }
+
+  if (s_stage5_state != STAGE5_STATE_POWER_ON)
+  {
+    return;
+  }
+
+  fault = app_bringup_stage5_runtime_fault(data);
+  if (fault != NULL)
+  {
+    app_bringup_stage5_shutdown(fault, STAGE5_STATE_FAULT);
+  }
+  else if ((STAGE5_POWER_ON_TIME_MS > 0U)
+           && ((uint32_t)(now - s_stage5_power_on_tick)
+               >= STAGE5_POWER_ON_TIME_MS))
+  {
+    app_bringup_stage5_shutdown("TEST_DONE_OFF", STAGE5_STATE_COMPLETE);
+  }
+}
+#endif
 #endif
 #endif
 
@@ -385,9 +592,12 @@ void APP_Init(void)
   static const char banner[] = "\r\nLDO BRINGUP STAGE 2: ADC1+PGOOD\r\n";
 #elif APP_BRINGUP_STAGE == 3U
   static const char banner[] = "\r\nLDO BRINGUP STAGE 3: MCP3464+DAC8562\r\n";
-#else
+#elif APP_BRINGUP_STAGE == 4U
   static const char banner[] =
       "\r\nLDO BRINGUP STAGE 4: ALL ADC PHYSICAL UNITS; OUTPUT=OFF\r\n";
+#else
+  static const char banner[] =
+      "\r\nLDO BRINGUP STAGE 5: GUARDED 5V/100mA OUTPUT\r\n";
 #endif
 
   app_bringup_led_init();
@@ -400,6 +610,9 @@ void APP_Init(void)
   (void)HAL_ADCEx_Calibration_Start(&hadc1);
 #elif APP_BRINGUP_STAGE >= 3U
   app_bringup_stage3_init();
+#if APP_BRINGUP_STAGE == 5U
+  app_bringup_stage5_init(now);
+#endif
 #endif
   app_bringup_uart_write(banner, (uint16_t)(sizeof(banner) - 1U));
 #else
@@ -454,7 +667,7 @@ void APP_Task(void)
     Measurements_Task();
   }
   app_bringup_stage3_sweep_task(now);
-#elif APP_BRINGUP_STAGE == 4U
+#elif APP_BRINGUP_STAGE >= 4U
   now = HAL_GetTick();
   if ((uint32_t)(now - s_led_tick) >= 500U)
   {
@@ -465,10 +678,13 @@ void APP_Task(void)
   {
     Measurements_Task();
   }
-  if ((uint32_t)(now - s_uart_tick) >= 1000U)
+#if APP_BRINGUP_STAGE == 5U
+  app_bringup_stage5_task(now);
+#endif
+  if ((uint32_t)(now - s_uart_tick) >= 250U)
   {
     s_uart_tick = now;
-    app_bringup_stage4_report();
+    app_bringup_adc_report();
   }
 #else
   uint8_t catch_up = 0U;
