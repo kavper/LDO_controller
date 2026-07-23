@@ -177,6 +177,7 @@ static const char *console_runtime_fault_condition(uint32_t now,
 {
   const Measurements_Data_t *data = Measurements_GetData();
   const Control_Status_t *control = Control_GetStatus();
+  uint32_t voltage_protection_reference_mV;
   uint32_t expected_cv_mV;
   uint32_t expected_cc_mV;
 
@@ -196,8 +197,21 @@ static const char *console_runtime_fault_condition(uint32_t now,
     *confirm_ms = CONSOLE_VIN_CONFIRM_MS;
     return "VIN_LOW";
   }
+
+  /*
+   * On a downward setpoint change the DAC follows voltage_applied_mV at the
+   * configured slew rate. Comparing VOUT immediately with the lower final
+   * target would misclassify the intentional 10 V -> 1 V transition as an
+   * overvoltage. Use the higher of target and applied so protection follows
+   * the commanded trajectory in both ramp directions.
+   */
+  voltage_protection_reference_mV = control->voltage_target_mV;
+  if (control->voltage_applied_mV > voltage_protection_reference_mV)
+  {
+    voltage_protection_reference_mV = control->voltage_applied_mV;
+  }
   if (data->vout_mV
-      > console_vout_limit_mV(control->voltage_target_mV,
+      > console_vout_limit_mV(voltage_protection_reference_mV,
                               CONSOLE_VOUT_HARD_OVERSHOOT_MIN_MV,
                               CONSOLE_VOUT_HARD_OVERSHOOT_PERCENT))
   {
@@ -205,7 +219,7 @@ static const char *console_runtime_fault_condition(uint32_t now,
     return "VOUT_HARD";
   }
   if (data->vout_mV
-      > console_vout_limit_mV(control->voltage_target_mV,
+      > console_vout_limit_mV(voltage_protection_reference_mV,
                               CONSOLE_VOUT_OVERSHOOT_MIN_MV,
                               CONSOLE_VOUT_OVERSHOOT_PERCENT))
   {

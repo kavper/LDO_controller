@@ -50,6 +50,12 @@ The confirmation times deliberately reject isolated samples and normal
 CC-to-CV recovery transients after a load is disconnected. They do not disable
 the protection for a sustained fault.
 
+During a commanded voltage reduction, the VOUT limits follow the ramped
+`applied` voltage instead of jumping immediately to the lower final target.
+For an upward change, the requested target remains the protection reference.
+This prevents a normal 10 V to 1 V transition from being reported as an
+overvoltage while keeping the limits active around the commanded trajectory.
+
 The `IOUT` field intentionally reports `N/A (no U18)`. The analog current-limit
 loop is active, but actual output-current telemetry cannot be trusted until U18
 is populated.
