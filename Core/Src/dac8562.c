@@ -8,6 +8,8 @@
 #define DAC8562_COMMAND_INTERNAL_REFERENCE 0x07U
 #define DAC8562_ADDRESS_A                  0x00U
 #define DAC8562_ADDRESS_B                  0x01U
+#define DAC8562_ADDRESS_GAIN               0x02U
+#define DAC8562_GAIN_ONE_BOTH_CHANNELS     0x0003U
 
 static SPI_HandleTypeDef *s_spi;
 
@@ -93,6 +95,17 @@ HAL_StatusTypeDef DAC8562_Init(SPI_HandleTypeDef *hspi)
     return status;
   }
 #endif
+
+  /*
+   * With the external board 3V_REF, explicitly select gain x1 on A (CV)
+   * and B (CC). Command 000/address 010 accesses the DAC8562 gain register.
+   */
+  status = DAC8562_RawWrite(DAC8562_COMMAND_WRITE_INPUT, DAC8562_ADDRESS_GAIN,
+                            DAC8562_GAIN_ONE_BOTH_CHANNELS);
+  if (status != HAL_OK)
+  {
+    return status;
+  }
 
   /* Buffer both zero codes, then update channel A (CV) and B (CC) together. */
   status = DAC8562_SetCVRaw(0U);

@@ -172,6 +172,7 @@ void MCP3464_DataReadyFlagFromISR(void)
 HAL_StatusTypeDef MCP3464_Init(SPI_HandleTypeDef *hspi)
 {
   HAL_StatusTypeDef status;
+  const uint8_t gain_calibration[3] = {0x7AU, 0xC1U, 0x00U};
   uint8_t value;
 
   if (hspi == NULL)
@@ -188,6 +189,7 @@ HAL_StatusTypeDef MCP3464_Init(SPI_HandleTypeDef *hspi)
   {
     return status;
   }
+  HAL_Delay(2U);
 
   /* CONFIG1: MCLK/1, OSR 256, reserved bits 00. */
   value = 0x0CU;
@@ -197,7 +199,7 @@ HAL_StatusTypeDef MCP3464_Init(SPI_HandleTypeDef *hspi)
     return status;
   }
 
-  /* CONFIG2: default boost, gain x1, reference auto-zero enabled, reserved bit = 1. */
+  /* CONFIG2: default boost, gain x1, MUX auto-zero off, reserved bits = 11. */
   value = 0x8BU;
   status = MCP3464_WriteRegister(MCP3464_REG_CONFIG2, &value, 1U);
   if (status != HAL_OK)
@@ -205,8 +207,22 @@ HAL_StatusTypeDef MCP3464_Init(SPI_HandleTypeDef *hspi)
     return status;
   }
 
-  /* CONFIG3: continuous conversion, signed 16-bit ADCDATA, communication CRC off. */
-  value = 0xC0U;
+  /*
+   * Digital gain 31425/32768 = 0.9590149 leaves headroom for the measured
+   * positive ADC gain error, so a 0..3 V DAC sweep does not saturate at 0x7FFF.
+   */
+  status = MCP3464_WriteRegister(MCP3464_REG_GAINCAL, gain_calibration,
+                                 sizeof(gain_calibration));
+  if (status != HAL_OK)
+  {
+    return status;
+  }
+
+  /*
+   * CONFIG3: continuous conversion, signed 16-bit ADCDATA, communication CRC
+   * off, digital gain calibration enabled.
+   */
+  value = 0xC1U;
   status = MCP3464_WriteRegister(MCP3464_REG_CONFIG3, &value, 1U);
   if (status != HAL_OK)
   {
@@ -221,7 +237,10 @@ HAL_StatusTypeDef MCP3464_Init(SPI_HandleTypeDef *hspi)
     return status;
   }
 
-  /* CONFIG0: internal 2.4 V reference, internal clock without clock output, conversion mode. */
+  /*
+   * CONFIG0 for MCP3464 (non-R): internal clock without clock output,
+   * sensor-bias currents off, conversion mode. REFIN+ uses board 3V_REF.
+   */
   value = 0xA3U;
   status = MCP3464_WriteRegister(MCP3464_REG_CONFIG0, &value, 1U);
   if (status != HAL_OK)

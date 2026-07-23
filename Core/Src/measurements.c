@@ -1,11 +1,15 @@
 #include "measurements.h"
 
 #include "adc.h"
+#include "app_config.h"
 #include "mcp3464.h"
 #include "spi.h"
 
 #include <stdbool.h>
 #include <string.h>
+
+#define MCP3464_NOMINAL_REFERENCE_UV 3000000LL
+#define MCP3464_SIGNED_CODES         32768LL
 
 typedef enum
 {
@@ -19,10 +23,10 @@ typedef enum
 
 static const uint32_t s_temperature_channels[MEASUREMENTS_TEMPERATURE_COUNT] =
 {
-  ADC_CHANNEL_0, /* ADC1_IN0_TEMP_1 */
-  ADC_CHANNEL_1, /* ADC1_IN1_TEMP_2 */
-  ADC_CHANNEL_6, /* ADC1_IN6_TEMP_3 */
-  ADC_CHANNEL_7  /* ADC1_IN7_TEMP_4 */
+  ADC_CHANNEL_0, /* T1: power MOSFET */
+  ADC_CHANNEL_1, /* T2: ambient */
+  ADC_CHANNEL_6, /* T3: bleeder resistor */
+  ADC_CHANNEL_7  /* T4: 3.3 V LDO / 15 V-to-5 V converter area */
 };
 
 static Measurements_Data_t s_data;
@@ -31,57 +35,115 @@ static uint8_t s_temperature_index;
 static bool s_temperature_conversion_active;
 static bool s_temperature_filter_valid[MEASUREMENTS_TEMPERATURE_COUNT];
 
+static int32_t measurements_apply_calibration(int32_t raw, int32_t zero_raw,
+                                              int32_t gain_ppm)
+{
+  int64_t numerator = ((int64_t)raw - zero_raw) * 1000000LL;
+
+  numerator += (numerator >= 0) ? ((int64_t)gain_ppm / 2LL)
+                               : -((int64_t)gain_ppm / 2LL);
+  return (int32_t)(numerator / gain_ppm);
+}
+
 static uint32_t measurements_vout_raw_to_mV(int32_t raw)
 {
-  /* TODO: apply the VOUT divider, front-end gain, offset and calibration. */
-  (void)raw;
-  return 0U;
+  int32_t calibrated = measurements_apply_calibration(
+      raw, MCP3464_VOUT_ZERO_RAW, MCP3464_COMMON_GAIN_PPM);
+  int64_t numerator;
+  int64_t denominator;
+
+  if (calibrated <= 0)
+  {
+    return 0U;
+  }
+
+  numerator = (int64_t)calibrated * MCP3464_EXTERNAL_VREF_MV
+            * VOLTAGE_SENSE_INPUT_RESISTANCE_OHM;
+  denominator = MCP3464_SIGNED_CODES
+              * VOLTAGE_SENSE_FEEDBACK_RESISTANCE_OHM;
+  return (uint32_t)((numerator + (denominator / 2LL)) / denominator);
 }
 
 static uint32_t measurements_iout_raw_to_mA(int32_t raw)
 {
-  /* TODO: apply shunt resistance, current-sense gain, offset and calibration. */
-  (void)raw;
-  return 0U;
+  int32_t calibrated = measurements_apply_calibration(
+      raw, MCP3464_IOUT_ZERO_RAW, MCP3464_COMMON_GAIN_PPM);
+  int64_t numerator;
+  int64_t denominator;
+
+  if (calibrated <= 0)
+  {
+    return 0U;
+  }
+
+  numerator = (int64_t)calibrated * MCP3464_EXTERNAL_VREF_MV * 1000LL;
+  denominator = MCP3464_SIGNED_CODES * CURRENT_SENSE_AMPLIFIER_GAIN
+              * CURRENT_SENSE_SHUNT_MILLIOHM;
+  return (uint32_t)((numerator + (denominator / 2LL)) / denominator);
 }
 
 static uint32_t measurements_vin_raw_to_mV(int32_t raw)
 {
-  /* TODO: apply the VIN divider, front-end gain, offset and calibration. */
-  (void)raw;
-  return 0U;
+  int32_t calibrated = measurements_apply_calibration(
+      raw, MCP3464_VIN_ZERO_RAW, MCP3464_COMMON_GAIN_PPM);
+  int64_t numerator;
+  int64_t denominator;
+
+  if (calibrated <= 0)
+  {
+    return 0U;
+  }
+
+  numerator = (int64_t)calibrated * MCP3464_EXTERNAL_VREF_MV
+            * VOLTAGE_SENSE_INPUT_RESISTANCE_OHM;
+  denominator = MCP3464_SIGNED_CODES
+              * VOLTAGE_SENSE_FEEDBACK_RESISTANCE_OHM;
+  return (uint32_t)((numerator + (denominator / 2LL)) / denominator);
 }
 
-static uint32_t measurements_dac_readback_raw_to_mV(int32_t raw)
+static uint32_t measurements_dac_readback_raw_to_mV(int32_t raw,
+                                                     int32_t zero_raw,
+                                                     int32_t gain_ppm)
 {
-  /* TODO: apply the DAC readback path gain/divider and channel calibration. */
-  (void)raw;
-  return 0U;
+  int32_t calibrated = measurements_apply_calibration(raw, zero_raw, gain_ppm);
+  int64_t numerator;
+
+  if (calibrated <= 0)
+  {
+    return 0U;
+  }
+
+  numerator = (int64_t)calibrated * MCP3464_EXTERNAL_VREF_MV;
+  return (uint32_t)((numerator + (MCP3464_SIGNED_CODES / 2LL))
+                    / MCP3464_SIGNED_CODES);
 }
 
 static HAL_StatusTypeDef measurements_select_mcp(McpMeasurement_t measurement)
 {
   switch (measurement)
   {
-    /* Differential: VOUT_DIFF = CH0 - CH1. */
+    /* Differential: ADC_VOUT_P (CH0) - ADC_VOUT_N (CH1). */
     case MCP_MEAS_VOUT_DIFF:
-      return MCP3464_SelectDifferential(0U, 1U);
+      return MCP3464_SelectDifferential(MCP3464_CHANNEL_VOUT_P,
+                                        MCP3464_CHANNEL_VOUT_N);
 
-    /* Differential: IOUT_DIFF = CH4 - CH5. */
+    /* Differential: ADC_IOUT_P (CH4) - ADC_IOUT_N (CH5). */
     case MCP_MEAS_IOUT_DIFF:
-      return MCP3464_SelectDifferential(4U, 5U);
+      return MCP3464_SelectDifferential(MCP3464_CHANNEL_IOUT_P,
+                                        MCP3464_CHANNEL_IOUT_N);
 
-    /* Differential: VIN_DIFF = CH6 - CH7. */
+    /* Differential: ADC_VIN_P (CH6) - ADC_VIN_N (CH7). */
     case MCP_MEAS_VIN_DIFF:
-      return MCP3464_SelectDifferential(6U, 7U);
+      return MCP3464_SelectDifferential(MCP3464_CHANNEL_VIN_P,
+                                        MCP3464_CHANNEL_VIN_N);
 
-    /* Single-ended: DAC_CC_READBACK = CH2 - AGND. */
+    /* Single-ended: ADC_DAC_CC (CH2) - AGND. */
     case MCP_MEAS_DAC_CC_SINGLE_ENDED:
-      return MCP3464_SelectSingleEnded(2U);
+      return MCP3464_SelectSingleEnded(MCP3464_CHANNEL_DAC_CC);
 
-    /* Single-ended: DAC_CV_READBACK = CH3 - AGND. */
+    /* Single-ended: ADC_DAC_CV (CH3) - AGND. */
     case MCP_MEAS_DAC_CV_SINGLE_ENDED:
-      return MCP3464_SelectSingleEnded(3U);
+      return MCP3464_SelectSingleEnded(MCP3464_CHANNEL_DAC_CV);
 
     default:
       return HAL_ERROR;
@@ -109,12 +171,14 @@ static void measurements_store_mcp(int32_t raw)
 
     case MCP_MEAS_DAC_CC_SINGLE_ENDED:
       s_data.dac_cc_readback_raw = raw;
-      s_data.dac_cc_readback_mV = measurements_dac_readback_raw_to_mV(raw);
+      s_data.dac_cc_readback_mV = measurements_dac_readback_raw_to_mV(
+          raw, MCP3464_DAC_CC_ZERO_RAW, MCP3464_DAC_CC_GAIN_PPM);
       break;
 
     case MCP_MEAS_DAC_CV_SINGLE_ENDED:
       s_data.dac_cv_readback_raw = raw;
-      s_data.dac_cv_readback_mV = measurements_dac_readback_raw_to_mV(raw);
+      s_data.dac_cv_readback_mV = measurements_dac_readback_raw_to_mV(
+          raw, MCP3464_DAC_CV_ZERO_RAW, MCP3464_DAC_CV_GAIN_PPM);
       break;
 
     default:
@@ -213,4 +277,14 @@ void Measurements_Task(void)
 const Measurements_Data_t *Measurements_GetData(void)
 {
   return &s_data;
+}
+
+int32_t Measurements_McpRawToMicrovolts(int32_t raw)
+{
+  int64_t numerator = (int64_t)raw * MCP3464_NOMINAL_REFERENCE_UV;
+
+  /* Signed rounding to the nearest microvolt, nominal VREF = 3.000 V, gain = 1. */
+  numerator += (numerator >= 0) ? (MCP3464_SIGNED_CODES / 2LL)
+                               : -(MCP3464_SIGNED_CODES / 2LL);
+  return (int32_t)(numerator / MCP3464_SIGNED_CODES);
 }
