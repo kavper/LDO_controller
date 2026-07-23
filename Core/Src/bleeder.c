@@ -30,7 +30,18 @@ void Bleeder_Task1ms(void)
   if (OutputCtrl_IsEnabled())
   {
     s_below_threshold_ms = 0U;
-    bleeder_set(false);
+
+    if (s_enabled)
+    {
+      if (vout_mV > BLEEDER_RUN_OFF_ABOVE_MV)
+      {
+        bleeder_set(false);
+      }
+    }
+    else if (vout_mV < BLEEDER_RUN_ON_BELOW_MV)
+    {
+      bleeder_set(true);
+    }
     return;
   }
 

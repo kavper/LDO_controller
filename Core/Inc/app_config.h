@@ -39,7 +39,13 @@
 #define VPRE_MAX_MV                        36000U
 #define VPRE_MARGIN_MV                     3000U
 
-/* Bleeder hysteresis. */
+/*
+ * Bleeder control. During normal output operation it provides a minimum load
+ * at low voltage, but is removed above 10 V to limit resistor dissipation.
+ * When the output is disabled it is used independently to discharge VOUT.
+ */
+#define BLEEDER_RUN_ON_BELOW_MV            9500U
+#define BLEEDER_RUN_OFF_ABOVE_MV          10000U
 #define BLEEDER_ON_THRESHOLD_MV            500U
 #define BLEEDER_OFF_THRESHOLD_MV           200U
 #define BLEEDER_OFF_CONFIRM_MS             500U
@@ -47,8 +53,9 @@
 /* GPIO polarities are centralized here so board revisions need one change. */
 #define OUT_OFF_ASSERTED_LEVEL             GPIO_PIN_SET
 #define OUT_OFF_DEASSERTED_LEVEL           GPIO_PIN_RESET
-#define BLEEDER_ENABLED_LEVEL              GPIO_PIN_SET
-#define BLEEDER_DISABLED_LEVEL             GPIO_PIN_RESET
+/* The optocoupler inverts STM_BLEED_ON, so the MCU-side control is active low. */
+#define BLEEDER_ENABLED_LEVEL              GPIO_PIN_RESET
+#define BLEEDER_DISABLED_LEVEL             GPIO_PIN_SET
 
 /* TODO: confirm the CC/CV comparator polarity on the final schematic. */
 #define CC_CV_STATE_CC_LEVEL               GPIO_PIN_SET

@@ -20,6 +20,11 @@ HELP
   temperature preflight checks pass.
 - `OUT OFF` disables the power stage immediately; the DAC setpoints then ramp
   down to zero and the bleeder discharges the output.
+
+During normal output operation the bleeder supplies a minimum load below
+9.5 V. It is switched off above 10 V to limit resistor power and temperature;
+the 0.5 V hysteresis prevents rapid switching near the threshold. The `STATE`
+row reports the logical hardware request as `BLEED=ON` or `BLEED=OFF`.
 - `STATUS` prints the same engineering-unit table that is sent automatically
   once per second.
 - Every valid command returns `ACK`; malformed, out-of-range or unsafe commands

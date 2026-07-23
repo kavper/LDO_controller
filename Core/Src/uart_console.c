@@ -362,9 +362,10 @@ void UART_Console_QueueStatus(void)
   ok = ok && console_append_row(report, sizeof(report), &used,
       "LDO CONTROLLER LIVE DEBUG");
   ok = ok && console_append_row(report, sizeof(report), &used,
-      "STATE: OUT=%s  MODE=%s  PGOOD=%u  FAULT=%s",
+      "STATE: OUT=%s  MODE=%s  BLEED=%s  PGOOD=%u  FAULT=%s",
       control->output_enabled ? "ON" : "OFF",
       console_mode_name(control->mode),
+      Bleeder_IsEnabled() ? "ON" : "OFF",
       (unsigned int)(HAL_GPIO_ReadPin(PGOOD_5V_IN_GPIO_Port,
                                      PGOOD_5V_IN_Pin)
                      == PGOOD_ASSERTED_LEVEL),
