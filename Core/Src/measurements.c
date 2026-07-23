@@ -5,7 +5,9 @@
 #include "mcp3464.h"
 #include "spi.h"
 
+#include <math.h>
 #include <stdbool.h>
+#include <stdint.h>
 #include <string.h>
 
 #define MCP3464_NOMINAL_REFERENCE_UV 3000000LL
@@ -34,6 +36,44 @@ static McpMeasurement_t s_mcp_measurement;
 static uint8_t s_temperature_index;
 static bool s_temperature_conversion_active;
 static bool s_temperature_filter_valid[MEASUREMENTS_TEMPERATURE_COUNT];
+
+static int32_t measurements_temperature_raw_to_centi_C(uint16_t raw,
+                                                        uint32_t beta_K)
+{
+  const float adc_full_scale = 4095.0f;
+  const float nominal_temperature_K =
+      (float)TEMPERATURE_NTC_NOMINAL_KELVIN_X100 / 100.0f;
+  float ntc_voltage_mV;
+  float resistance_ratio;
+  float temperature_K;
+  float temperature_C;
+
+  if (raw == 0U)
+  {
+    return INT32_MIN;
+  }
+
+  ntc_voltage_mV = ((float)raw * (float)TEMPERATURE_ADC_REFERENCE_MV)
+                 / adc_full_scale;
+  if (ntc_voltage_mV >= (float)TEMPERATURE_DIVIDER_SUPPLY_MV)
+  {
+    return INT32_MIN;
+  }
+
+  /*
+   * Rpullup equals the nominal NTC resistance, so Rntc/R25 simplifies to
+   * Vntc / (Vdivider - Vntc).
+   */
+  resistance_ratio = ntc_voltage_mV
+                   / ((float)TEMPERATURE_DIVIDER_SUPPLY_MV - ntc_voltage_mV);
+  temperature_K = 1.0f
+                / ((1.0f / nominal_temperature_K)
+                   + (logf(resistance_ratio) / (float)beta_K));
+  temperature_C = temperature_K - 273.15f;
+  return (int32_t)((temperature_C >= 0.0f)
+                 ? (temperature_C * 100.0f + 0.5f)
+                 : (temperature_C * 100.0f - 0.5f));
+}
 
 static int32_t measurements_apply_calibration(int32_t raw, int32_t zero_raw,
                                               int32_t gain_ppm)
@@ -248,6 +288,13 @@ static void measurements_temperature_task(void)
     filtered += ((int32_t)raw - filtered) / 8; /* IIR alpha = 1/8. */
     s_data.temperature_filtered[s_temperature_index] = (uint16_t)filtered;
   }
+
+  s_data.temperature_centi_C[s_temperature_index] =
+      measurements_temperature_raw_to_centi_C(
+          s_data.temperature_filtered[s_temperature_index],
+          (s_temperature_index <= MEASUREMENTS_TEMP_AMBIENT)
+              ? TEMPERATURE_NTC_BETA_103AT2_K
+              : TEMPERATURE_NTC_BETA_NCP18_K);
 
   s_temperature_index = (uint8_t)((s_temperature_index + 1U)
                                   % MEASUREMENTS_TEMPERATURE_COUNT);

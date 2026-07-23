@@ -8,11 +8,12 @@
  *   1 - safe solid LED + UART heartbeat only
  *   2 - blinking LED + UART + internal ADC1/PGOOD diagnostics
  *   3 - MCP3464 verification + low-level DAC8562/readback test
+ *   4 - continuous ADC diagnostics in physical units (power output stays off)
  *   0 - normal controller application
  *
  * Keep the active stage enabled until its hardware has been verified.
  */
-#define APP_BRINGUP_STAGE                   3U
+#define APP_BRINGUP_STAGE                   4U
 #define BOARD_LED_GPIO_PORT                 GPIOB
 #define BOARD_LED_PIN                       GPIO_PIN_0
 
@@ -58,6 +59,19 @@
 #define MCP3464_DEVICE_ADDRESS              0x01U
 #define MCP3464_SPI_TIMEOUT_MS              10U
 #define MCP3464_EXTERNAL_VREF_MV            3000U
+
+/*
+ * The four 10 kOhm NTC dividers are supplied from +3V3, while ADC1 VREF+
+ * is the 3.000 V reference. RT1/RT2 are 103AT-2; R96/R99 are
+ * NCP18XH103F03RB. Beta conversion is intended for board bring-up and can
+ * later be replaced by per-sensor calibration or full resistance tables.
+ */
+#define TEMPERATURE_ADC_REFERENCE_MV        3000U
+#define TEMPERATURE_DIVIDER_SUPPLY_MV       3300U
+#define TEMPERATURE_NTC_NOMINAL_OHM         10000U
+#define TEMPERATURE_NTC_NOMINAL_KELVIN_X100 29815U
+#define TEMPERATURE_NTC_BETA_103AT2_K       3435U
+#define TEMPERATURE_NTC_BETA_NCP18_K        3434U
 
 /*
  * Stage-3 board calibration, calculated from 70 DAC-to-ADC loopback samples.

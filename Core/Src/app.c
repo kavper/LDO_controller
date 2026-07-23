@@ -24,7 +24,7 @@ static HAL_StatusTypeDef app_configure_spi(void)
   hspi1.Init.DataSize = SPI_DATASIZE_8BIT;
   hspi1.Init.CLKPolarity = SPI_POLARITY_LOW;
   hspi1.Init.CLKPhase = SPI_PHASE_2EDGE;
-#if APP_BRINGUP_STAGE == 3U
+#if APP_BRINGUP_STAGE >= 3U
   hspi1.Init.BaudRatePrescaler = SPI_BAUDRATEPRESCALER_32; /* 2 MHz bring-up. */
 #else
   hspi1.Init.BaudRatePrescaler = SPI_BAUDRATEPRESCALER_2;
@@ -35,7 +35,7 @@ static HAL_StatusTypeDef app_configure_spi(void)
   hspi2.Init.DataSize = SPI_DATASIZE_8BIT;
   hspi2.Init.CLKPolarity = SPI_POLARITY_LOW;
   hspi2.Init.CLKPhase = SPI_PHASE_1EDGE;
-#if APP_BRINGUP_STAGE == 3U
+#if APP_BRINGUP_STAGE >= 3U
   hspi2.Init.BaudRatePrescaler = SPI_BAUDRATEPRESCALER_64; /* 1 MHz bring-up. */
 #else
   hspi2.Init.BaudRatePrescaler = SPI_BAUDRATEPRESCALER_4;
@@ -129,18 +129,20 @@ static void app_bringup_send_adc_report(void)
 }
 #endif
 
+#if APP_BRINGUP_STAGE >= 3U
+static bool s_mcp_ok;
+static bool s_dac_ok;
+static uint16_t s_mcp_identity;
+static uint8_t s_mcp_config[5];
+
 #if APP_BRINGUP_STAGE == 3U
 #define STAGE3_SWEEP_POINTS      100U
 #define STAGE3_SWEEP_SETTLE_MS   250U
 
-static bool s_mcp_ok;
-static bool s_dac_ok;
 static bool s_dac_sweep_done;
 static uint8_t s_dac_sweep_index;
 static uint16_t s_dac_code;
 static uint32_t s_dac_tick;
-static uint16_t s_mcp_identity;
-static uint8_t s_mcp_config[5];
 
 static uint16_t app_bringup_stage3_code_for_point(uint8_t index)
 {
@@ -148,6 +150,7 @@ static uint16_t app_bringup_stage3_code_for_point(uint8_t index)
                      + ((STAGE3_SWEEP_POINTS - 1U) / 2U);
   return (uint16_t)(numerator / (STAGE3_SWEEP_POINTS - 1U));
 }
+#endif
 
 static void app_bringup_stage3_init(void)
 {
@@ -156,10 +159,12 @@ static void app_bringup_stage3_init(void)
 
   s_mcp_ok = false;
   s_dac_ok = false;
+#if APP_BRINGUP_STAGE == 3U
   s_dac_sweep_done = false;
   s_dac_sweep_index = 0U;
   s_dac_code = app_bringup_stage3_code_for_point(0U);
   s_dac_tick = HAL_GetTick();
+#endif
   s_mcp_identity = 0U;
 
   if ((app_configure_spi() == HAL_OK)
@@ -192,6 +197,7 @@ static void app_bringup_stage3_init(void)
   }
 }
 
+#if APP_BRINGUP_STAGE == 3U
 static bool app_bringup_stage3_set_point(uint8_t index)
 {
   uint16_t code = app_bringup_stage3_code_for_point(index);
@@ -271,6 +277,93 @@ static void app_bringup_stage3_sweep_task(uint32_t now)
 }
 #endif
 
+#if APP_BRINGUP_STAGE == 4U
+static uint32_t app_bringup_temperature_magnitude(int32_t centi_C)
+{
+  return (uint32_t)((centi_C < 0) ? -(int64_t)centi_C : (int64_t)centi_C);
+}
+
+static char app_bringup_temperature_sign(int32_t centi_C)
+{
+  return (centi_C < 0) ? '-' : '+';
+}
+
+static void app_bringup_stage4_report(void)
+{
+  const Measurements_Data_t *data = Measurements_GetData();
+  uint32_t temperature[MEASUREMENTS_TEMPERATURE_COUNT];
+  GPIO_PinState pgood;
+  char report[420];
+  int length;
+  uint8_t index;
+
+  for (index = 0U; index < MEASUREMENTS_TEMPERATURE_COUNT; ++index)
+  {
+    temperature[index] =
+        app_bringup_temperature_magnitude(data->temperature_centi_C[index]);
+  }
+  pgood = HAL_GPIO_ReadPin(PGOOD_5V_IN_GPIO_Port, PGOOD_5V_IN_Pin);
+
+  length = snprintf(
+      report, sizeof(report),
+      "STM_ADC T1_MOS=%c%lu.%02luC T2_AMB=%c%lu.%02luC "
+      "T3_BLEED=%c%lu.%02luC T4_PWR=%c%lu.%02luC PGOOD_5V=%u\r\n",
+      app_bringup_temperature_sign(data->temperature_centi_C[0]),
+      (unsigned long)(temperature[0] / 100U),
+      (unsigned long)(temperature[0] % 100U),
+      app_bringup_temperature_sign(data->temperature_centi_C[1]),
+      (unsigned long)(temperature[1] / 100U),
+      (unsigned long)(temperature[1] % 100U),
+      app_bringup_temperature_sign(data->temperature_centi_C[2]),
+      (unsigned long)(temperature[2] / 100U),
+      (unsigned long)(temperature[2] % 100U),
+      app_bringup_temperature_sign(data->temperature_centi_C[3]),
+      (unsigned long)(temperature[3] / 100U),
+      (unsigned long)(temperature[3] % 100U),
+      (unsigned int)(pgood == PGOOD_ASSERTED_LEVEL));
+  if (length > 0)
+  {
+    uint16_t tx_length = (length < (int)sizeof(report))
+                       ? (uint16_t)length : (uint16_t)(sizeof(report) - 1U);
+    app_bringup_uart_write(report, tx_length);
+  }
+
+  length = snprintf(
+      report, sizeof(report),
+      "MCP_ADC STATUS=%s ID=%04X CFG=%02X/%02X/%02X/%02X IRQ=%02X "
+      "DAC=%s VIN=%lu.%03luV VOUT=%lu.%03luV "
+      "IOUT=N/A(U18_MISSING) DAC_CC=%lu.%03luV DAC_CV=%lu.%03luV\r\n"
+      "ADC_RAW STM=%u/%u/%u/%u MCP_VIN=%ld MCP_VOUT=%ld MCP_IOUT=%ld "
+      "MCP_CC=%ld MCP_CV=%ld\r\n",
+      s_mcp_ok ? "OK" : "FAIL", (unsigned int)s_mcp_identity,
+      (unsigned int)s_mcp_config[0], (unsigned int)s_mcp_config[1],
+      (unsigned int)s_mcp_config[2], (unsigned int)s_mcp_config[3],
+      (unsigned int)s_mcp_config[4], s_dac_ok ? "OK" : "FAIL",
+      (unsigned long)(data->vin_mV / 1000U),
+      (unsigned long)(data->vin_mV % 1000U),
+      (unsigned long)(data->vout_mV / 1000U),
+      (unsigned long)(data->vout_mV % 1000U),
+      (unsigned long)(data->dac_cc_readback_mV / 1000U),
+      (unsigned long)(data->dac_cc_readback_mV % 1000U),
+      (unsigned long)(data->dac_cv_readback_mV / 1000U),
+      (unsigned long)(data->dac_cv_readback_mV % 1000U),
+      (unsigned int)data->temperature_filtered[0],
+      (unsigned int)data->temperature_filtered[1],
+      (unsigned int)data->temperature_filtered[2],
+      (unsigned int)data->temperature_filtered[3],
+      (long)data->vin_diff_raw, (long)data->vout_diff_raw,
+      (long)data->iout_diff_raw, (long)data->dac_cc_readback_raw,
+      (long)data->dac_cv_readback_raw);
+  if (length > 0)
+  {
+    uint16_t tx_length = (length < (int)sizeof(report))
+                       ? (uint16_t)length : (uint16_t)(sizeof(report) - 1U);
+    app_bringup_uart_write(report, tx_length);
+  }
+}
+#endif
+#endif
+
 #else
 
 static uint32_t s_control_tick;
@@ -290,8 +383,11 @@ void APP_Init(void)
   static const char banner[] = "\r\nLDO BRINGUP STAGE 1: LED+UART OK\r\n";
 #elif APP_BRINGUP_STAGE == 2U
   static const char banner[] = "\r\nLDO BRINGUP STAGE 2: ADC1+PGOOD\r\n";
-#else
+#elif APP_BRINGUP_STAGE == 3U
   static const char banner[] = "\r\nLDO BRINGUP STAGE 3: MCP3464+DAC8562\r\n";
+#else
+  static const char banner[] =
+      "\r\nLDO BRINGUP STAGE 4: ALL ADC PHYSICAL UNITS; OUTPUT=OFF\r\n";
 #endif
 
   app_bringup_led_init();
@@ -302,7 +398,7 @@ void APP_Init(void)
 #endif
 #if APP_BRINGUP_STAGE == 2U
   (void)HAL_ADCEx_Calibration_Start(&hadc1);
-#elif APP_BRINGUP_STAGE == 3U
+#elif APP_BRINGUP_STAGE >= 3U
   app_bringup_stage3_init();
 #endif
   app_bringup_uart_write(banner, (uint16_t)(sizeof(banner) - 1U));
@@ -358,6 +454,22 @@ void APP_Task(void)
     Measurements_Task();
   }
   app_bringup_stage3_sweep_task(now);
+#elif APP_BRINGUP_STAGE == 4U
+  now = HAL_GetTick();
+  if ((uint32_t)(now - s_led_tick) >= 500U)
+  {
+    s_led_tick = now;
+    HAL_GPIO_TogglePin(BOARD_LED_GPIO_PORT, BOARD_LED_PIN);
+  }
+  if (s_mcp_ok)
+  {
+    Measurements_Task();
+  }
+  if ((uint32_t)(now - s_uart_tick) >= 1000U)
+  {
+    s_uart_tick = now;
+    app_bringup_stage4_report();
+  }
 #else
   uint8_t catch_up = 0U;
 

@@ -22,7 +22,7 @@ typedef struct
   int32_t dac_cc_readback_raw;
   int32_t dac_cv_readback_raw;
 
-  /* Engineering values. Hardware-dependent conversion is intentionally TODO. */
+  /* Engineering values converted from the board schematic and calibration. */
   uint32_t vout_mV;
   uint32_t iout_mA;
   uint32_t vin_mV;
@@ -38,6 +38,7 @@ typedef struct
    */
   uint16_t temperature_raw[MEASUREMENTS_TEMPERATURE_COUNT];
   uint16_t temperature_filtered[MEASUREMENTS_TEMPERATURE_COUNT];
+  int32_t temperature_centi_C[MEASUREMENTS_TEMPERATURE_COUNT];
 } Measurements_Data_t;
 
 void Measurements_Init(void);
