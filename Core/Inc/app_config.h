@@ -16,8 +16,8 @@
  * Keep the active stage enabled until its hardware has been verified.
  */
 #define APP_BRINGUP_STAGE                   6U
-#define BOARD_LED_GPIO_PORT                 GPIOB
-#define BOARD_LED_PIN                       GPIO_PIN_0
+#define BOARD_LED_GPIO_PORT                 LED_G0_GPIO_Port
+#define BOARD_LED_PIN                       LED_G0_Pin
 
 /* User-facing setpoint limits. */
 #define APP_VOLTAGE_MIN_MV                 0U
@@ -53,9 +53,7 @@
 /* GPIO polarities are centralized here so board revisions need one change. */
 #define OUT_OFF_ASSERTED_LEVEL             GPIO_PIN_SET
 #define OUT_OFF_DEASSERTED_LEVEL           GPIO_PIN_RESET
-/* The optocoupler inverts STM_BLEED_ON, so the MCU-side control is active low. */
-#define BLEEDER_ENABLED_LEVEL              GPIO_PIN_RESET
-#define BLEEDER_DISABLED_LEVEL             GPIO_PIN_SET
+/* BLEED_ON is not connected to the MCU on this revision. */
 
 /* TODO: confirm the CC/CV comparator polarity on the final schematic. */
 #define CC_CV_STATE_CC_LEVEL               GPIO_PIN_SET
@@ -70,13 +68,11 @@
 #define MCP3464_EXTERNAL_VREF_MV            3000U
 
 /*
- * The four 10 kOhm NTC dividers are supplied from +3V3, while ADC1 VREF+
- * is the 3.000 V reference. RT1/RT2 are 103AT-2; R96/R99 are
- * NCP18XH103F03RB. Beta conversion is intended for board bring-up and can
- * later be replaced by per-sensor calibration or full resistance tables.
+ * The four 10 kOhm NTC dividers are supplied from 3V_REFR, the same rail
+ * as ADC1 VREF+. RT1/RT2 are 103AT-2; T3/T4 use 10 kOhm resistors.
  */
 #define TEMPERATURE_ADC_REFERENCE_MV        3000U
-#define TEMPERATURE_DIVIDER_SUPPLY_MV       3300U
+#define TEMPERATURE_DIVIDER_SUPPLY_MV       3000U
 #define TEMPERATURE_NTC_NOMINAL_OHM         10000U
 #define TEMPERATURE_NTC_NOMINAL_KELVIN_X100 29815U
 #define TEMPERATURE_NTC_BETA_103AT2_K       3435U

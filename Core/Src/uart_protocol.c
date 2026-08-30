@@ -494,11 +494,6 @@ void UART_Protocol_Task(void)
   uart_tx_task();
 }
 
-void USART2_IRQHandler(void)
-{
-  HAL_UART_IRQHandler(&huart2);
-}
-
 void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 {
   if ((s_uart != NULL) && (huart == s_uart))

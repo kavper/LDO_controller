@@ -249,19 +249,12 @@ HAL_StatusTypeDef MCP3464_Init(SPI_HandleTypeDef *hspi)
   }
 
   __HAL_GPIO_EXTI_CLEAR_IT(ADC_IRQ_MDAT_Pin);
-  HAL_NVIC_SetPriority(EXTI4_15_IRQn, 1U, 0U);
-  HAL_NVIC_EnableIRQ(EXTI4_15_IRQn);
 
   if (HAL_GPIO_ReadPin(ADC_IRQ_MDAT_GPIO_Port, ADC_IRQ_MDAT_Pin) == GPIO_PIN_RESET)
   {
     s_data_ready = true;
   }
   return HAL_OK;
-}
-
-void EXTI4_15_IRQHandler(void)
-{
-  HAL_GPIO_EXTI_IRQHandler(ADC_IRQ_MDAT_Pin);
 }
 
 void HAL_GPIO_EXTI_Falling_Callback(uint16_t GPIO_Pin)

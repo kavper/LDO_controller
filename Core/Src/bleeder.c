@@ -13,8 +13,7 @@ static uint16_t s_below_threshold_ms;
 static void bleeder_set(bool enabled)
 {
   s_enabled = enabled;
-  HAL_GPIO_WritePin(BLEEDER_EN_GPIO_Port, BLEEDER_EN_Pin,
-                    enabled ? BLEEDER_ENABLED_LEVEL : BLEEDER_DISABLED_LEVEL);
+  /* BLEED_ON is not routed to the G0 MCU on this board revision. */
 }
 
 void Bleeder_Init(void)
