@@ -3,6 +3,7 @@
 #include "adc.h"
 #include "app_config.h"
 #include "bleeder.h"
+#include "board_led.h"
 #include "control.h"
 #include "dac8562.h"
 #include "measurements.h"
@@ -47,11 +48,7 @@ static HAL_StatusTypeDef app_configure_spi(void)
 }
 
 #if APP_BRINGUP_STAGE != 0U
-
 static uint32_t s_uart_tick;
-
-#if APP_BRINGUP_STAGE >= 2U
-static uint32_t s_led_tick;
 #endif
 
 #if APP_BRINGUP_STAGE == 6U
@@ -70,15 +67,7 @@ static const uint32_t s_bringup_adc_channels[4] =
 
 static void app_bringup_led_init(void)
 {
-  GPIO_InitTypeDef gpio = {0};
-
-  __HAL_RCC_GPIOB_CLK_ENABLE();
-  HAL_GPIO_WritePin(BOARD_LED_GPIO_PORT, BOARD_LED_PIN, GPIO_PIN_SET);
-  gpio.Pin = BOARD_LED_PIN;
-  gpio.Mode = GPIO_MODE_OUTPUT_PP;
-  gpio.Pull = GPIO_NOPULL;
-  gpio.Speed = GPIO_SPEED_FREQ_LOW;
-  HAL_GPIO_Init(BOARD_LED_GPIO_PORT, &gpio);
+  BoardLed_Init();
 }
 
 static void app_bringup_uart_write(const char *text, uint16_t length)
@@ -576,11 +565,9 @@ static void app_bringup_stage5_task(uint32_t now)
 #endif
 #endif
 
-#else
-
+#if APP_BRINGUP_STAGE == 0U
 static uint32_t s_control_tick;
 static uint32_t s_telemetry_tick;
-
 #endif
 
 void APP_Init(void)
@@ -589,6 +576,7 @@ void APP_Init(void)
 
   OutputCtrl_Init();
   Bleeder_Init();
+  BoardLed_Init();
 
 #if APP_BRINGUP_STAGE != 0U
 #if APP_BRINGUP_STAGE == 1U
@@ -611,9 +599,6 @@ void APP_Init(void)
   app_bringup_led_init();
   now = HAL_GetTick();
   s_uart_tick = now;
-#if APP_BRINGUP_STAGE >= 2U
-  s_led_tick = now;
-#endif
 #if APP_BRINGUP_STAGE == 2U
   (void)HAL_ADCEx_Calibration_Start(&hadc1);
 #elif APP_BRINGUP_STAGE >= 3U
@@ -651,6 +636,7 @@ void APP_Task(void)
   static const char heartbeat[] = "LDO BRINGUP STAGE 1: LED+UART OK\r\n";
 
   now = HAL_GetTick();
+  BoardLed_Task(now);
   if ((uint32_t)(now - s_uart_tick) >= 1000U)
   {
     s_uart_tick = now;
@@ -658,11 +644,7 @@ void APP_Task(void)
   }
 #elif APP_BRINGUP_STAGE == 2U
   now = HAL_GetTick();
-  if ((uint32_t)(now - s_led_tick) >= 500U)
-  {
-    s_led_tick = now;
-    HAL_GPIO_TogglePin(BOARD_LED_GPIO_PORT, BOARD_LED_PIN);
-  }
+  BoardLed_Task(now);
   if ((uint32_t)(now - s_uart_tick) >= 1000U)
   {
     s_uart_tick = now;
@@ -670,11 +652,7 @@ void APP_Task(void)
   }
 #elif APP_BRINGUP_STAGE == 3U
   now = HAL_GetTick();
-  if ((uint32_t)(now - s_led_tick) >= 500U)
-  {
-    s_led_tick = now;
-    HAL_GPIO_TogglePin(BOARD_LED_GPIO_PORT, BOARD_LED_PIN);
-  }
+  BoardLed_Task(now);
   if (s_mcp_ok)
   {
     Measurements_Task();
@@ -684,11 +662,7 @@ void APP_Task(void)
   uint8_t catch_up = 0U;
 
   now = HAL_GetTick();
-  if ((uint32_t)(now - s_led_tick) >= 500U)
-  {
-    s_led_tick = now;
-    HAL_GPIO_TogglePin(BOARD_LED_GPIO_PORT, BOARD_LED_PIN);
-  }
+  BoardLed_Task(now);
   if (s_mcp_ok)
   {
     Measurements_Task();
@@ -717,11 +691,7 @@ void APP_Task(void)
   UART_Protocol_Task();
 #elif APP_BRINGUP_STAGE >= 4U
   now = HAL_GetTick();
-  if ((uint32_t)(now - s_led_tick) >= 500U)
-  {
-    s_led_tick = now;
-    HAL_GPIO_TogglePin(BOARD_LED_GPIO_PORT, BOARD_LED_PIN);
-  }
+  BoardLed_Task(now);
   if (s_mcp_ok)
   {
     Measurements_Task();
@@ -741,6 +711,7 @@ void APP_Task(void)
   UART_Protocol_Task();
 
   now = HAL_GetTick();
+  BoardLed_Task(now);
   while (((uint32_t)(now - s_control_tick) >= APP_CONTROL_PERIOD_MS) && (catch_up < 10U))
   {
     s_control_tick += APP_CONTROL_PERIOD_MS;

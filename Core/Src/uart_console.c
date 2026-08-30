@@ -605,6 +605,11 @@ static void console_handle_line(char *line, uint32_t now)
   }
 }
 
+const char *UART_Console_GetFault(void)
+{
+  return (s_fault != NULL) ? s_fault : "NONE";
+}
+
 void UART_Console_Init(bool mcp_ok, bool dac_ok)
 {
   s_mcp_ok = mcp_ok;

@@ -25,6 +25,16 @@ During normal output operation the bleeder supplies a minimum load below
 9.5 V. It is switched off above 10 V to limit resistor power and temperature;
 the 0.5 V hysteresis prevents rapid switching near the threshold. The `STATE`
 row reports the logical hardware request as `BLEED=ON` or `BLEED=OFF`.
+On this board revision `BLEED_ON` is not wired to the MCU, so that flag is
+software-only.
+
+DS3 (`LED_G0` on PB0, active low) shows controller state:
+
+- 60 ms flash once a second: idle, 5 V PGOOD OK, output off
+- solid on: output enabled, CV
+- ~4 Hz blink: output enabled, CC
+- double-flash: G4 `POWER_KILL` or lost 5 V PGOOD
+- fast blink: console fault, output forced off
 - `STATUS` prints the same engineering-unit table that is sent automatically
   once per second.
 - Every valid command returns `ACK`; malformed, out-of-range or unsafe commands
