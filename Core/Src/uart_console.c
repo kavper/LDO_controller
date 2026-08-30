@@ -3,6 +3,7 @@
 #include "app_config.h"
 #include "bleeder.h"
 #include "control.h"
+#include "fan_request.h"
 #include "main.h"
 #include "measurements.h"
 #include "uart_protocol.h"
@@ -433,6 +434,44 @@ void UART_Console_QueueStatus(void)
   if (ok)
   {
     (void)UART_Protocol_QueueText(report);
+  }
+}
+
+void UART_Console_QueueMachineTelemetry(void)
+{
+  const Measurements_Data_t *data = Measurements_GetData();
+  const Control_Status_t *control = Control_GetStatus();
+  char line[192];
+  int written;
+
+  written = snprintf(
+      line, sizeof(line),
+      "TLM out=%u mode=%u vset=%lu vout=%lu iset=%lu iout=%lu vin=%lu "
+      "t1=%ld t2=%ld t3=%ld t4=%ld bleed=%u fan=%u pgood=%u kill=%u cccv=%u "
+      "fault=%s\r\n",
+      control->output_enabled ? 1U : 0U,
+      (unsigned int)control->mode,
+      (unsigned long)control->voltage_target_mV,
+      (unsigned long)data->vout_mV,
+      (unsigned long)control->current_target_mA,
+      (unsigned long)data->iout_mA,
+      (unsigned long)data->vin_mV,
+      (long)data->temperature_centi_C[0],
+      (long)data->temperature_centi_C[1],
+      (long)data->temperature_centi_C[2],
+      (long)data->temperature_centi_C[3],
+      Bleeder_IsEnabled() ? 1U : 0U,
+      (unsigned int)FanRequest_Percent(),
+      (unsigned int)(HAL_GPIO_ReadPin(PGOOD_5V_IN_GPIO_Port, PGOOD_5V_IN_Pin)
+                     == PGOOD_ASSERTED_LEVEL),
+      (unsigned int)(HAL_GPIO_ReadPin(POWER_KILL_GPIO_Port, POWER_KILL_Pin)
+                     == GPIO_PIN_RESET),
+      (unsigned int)(HAL_GPIO_ReadPin(CC_CV_STATE_GPIO_Port, CC_CV_STATE_Pin)
+                     == CC_CV_STATE_CC_LEVEL),
+      (s_fault != NULL) ? s_fault : "NONE");
+  if ((written > 0) && ((size_t)written < sizeof(line)))
+  {
+    (void)UART_Protocol_QueueText(line);
   }
 }
 

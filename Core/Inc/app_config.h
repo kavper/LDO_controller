@@ -40,15 +40,25 @@
 #define VPRE_MARGIN_MV                     3000U
 
 /*
- * Bleeder control. During normal output operation it provides a minimum load
- * at low voltage, but is removed above 10 V to limit resistor dissipation.
- * When the output is disabled it is used independently to discharge VOUT.
+ * Bleeder request (G4 drives BLEED_ON; G0 has no GPIO on this revision).
+ * With the output enabled, bleed below a 4.000 V setpoint so the analog
+ * loops see a minimum load. Hysteresis avoids chatter around 4 V.
+ * With the output disabled the bleeder still discharges VOUT to ~0.2 V.
  */
-#define BLEEDER_RUN_ON_BELOW_MV            9500U
-#define BLEEDER_RUN_OFF_ABOVE_MV          10000U
+#define BLEEDER_RUN_ON_BELOW_MV            4000U
+#define BLEEDER_RUN_OFF_ABOVE_MV           4200U
 #define BLEEDER_ON_THRESHOLD_MV            500U
 #define BLEEDER_OFF_THRESHOLD_MV           200U
 #define BLEEDER_OFF_CONFIRM_MS             500U
+
+/*
+ * Fan duty request sent to G4 (G4 owns FAN_PWM / FAN_TACH). Linear between
+ * OFF and FULL using the hottest of MOSFET / bleeder / PSU-area NTCs.
+ */
+#define FAN_REQUEST_OFF_CENTI_C            3000
+#define FAN_REQUEST_FULL_CENTI_C           5500
+#define FAN_REQUEST_MIN_PERCENT            20U
+#define FAN_REQUEST_FAILSAFE_PERCENT       40U
 
 /* GPIO polarities are centralized here so board revisions need one change. */
 #define OUT_OFF_ASSERTED_LEVEL             GPIO_PIN_SET
@@ -118,6 +128,7 @@
 
 /* Interactive console safety thresholds. */
 #define CONSOLE_STATUS_PERIOD_MS            1000U
+#define CONSOLE_TLM_PERIOD_MS                200U
 #define CONSOLE_MINIMUM_VIN_MV              6000U
 #define CONSOLE_MAXIMUM_TEMPERATURE_CENTI_C 6000L
 #define CONSOLE_VOUT_OVERSHOOT_MIN_MV       1500U

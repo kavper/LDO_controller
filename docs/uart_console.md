@@ -21,12 +21,10 @@ HELP
 - `OUT OFF` disables the power stage immediately; the DAC setpoints then ramp
   down to zero and the bleeder discharges the output.
 
-During normal output operation the bleeder supplies a minimum load below
-9.5 V. It is switched off above 10 V to limit resistor power and temperature;
-the 0.5 V hysteresis prevents rapid switching near the threshold. The `STATE`
-row reports the logical hardware request as `BLEED=ON` or `BLEED=OFF`.
-On this board revision `BLEED_ON` is not wired to the MCU, so that flag is
-software-only.
+During normal output operation the bleeder is requested when the **setpoint**
+is below 4.000 V (off again at 4.200 V). G0 has no `BLEED_ON` pin; the
+`bleed=` flag in the `TLM` line is what G4 must drive. With the output off
+the same flag still requests a discharge down to ~0.2 V.
 
 DS3 (`LED_G0` on PB0, active low) shows controller state:
 
@@ -35,6 +33,9 @@ DS3 (`LED_G0` on PB0, active low) shows controller state:
 - ~4 Hz blink: output enabled, CC
 - double-flash: G4 `POWER_KILL` or lost 5 V PGOOD
 - fast blink: console fault, output forced off
+
+Every 200 ms G0 also emits one machine `TLM` line (see `docs/G4_LDO_UART.md`)
+for G4: voltages, four NTC values, `bleed=` and `fan=` requests.
 - `STATUS` prints the same engineering-unit table that is sent automatically
   once per second.
 - Every valid command returns `ACK`; malformed, out-of-range or unsafe commands

@@ -1,6 +1,7 @@
 #include "bleeder.h"
 
 #include "app_config.h"
+#include "control.h"
 #include "main.h"
 #include "measurements.h"
 #include "output_ctrl.h"
@@ -24,20 +25,24 @@ void Bleeder_Init(void)
 
 void Bleeder_Task1ms(void)
 {
+  const Control_Status_t *control;
   uint32_t vout_mV = Measurements_GetData()->vout_mV;
+  uint32_t set_mV;
 
   if (OutputCtrl_IsEnabled())
   {
     s_below_threshold_ms = 0U;
+    control = Control_GetStatus();
+    set_mV = control->voltage_target_mV;
 
     if (s_enabled)
     {
-      if (vout_mV > BLEEDER_RUN_OFF_ABOVE_MV)
+      if (set_mV >= BLEEDER_RUN_OFF_ABOVE_MV)
       {
         bleeder_set(false);
       }
     }
-    else if (vout_mV < BLEEDER_RUN_ON_BELOW_MV)
+    else if (set_mV < BLEEDER_RUN_ON_BELOW_MV)
     {
       bleeder_set(true);
     }

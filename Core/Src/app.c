@@ -53,6 +53,7 @@ static uint32_t s_uart_tick;
 
 #if APP_BRINGUP_STAGE == 6U
 static uint32_t s_control_tick;
+static uint32_t s_tlm_tick;
 #endif
 
 #if APP_BRINGUP_STAGE == 2U
@@ -610,6 +611,7 @@ void APP_Init(void)
   UART_Protocol_InitText(&huart2);
   UART_Console_Init(s_mcp_ok, s_dac_ok);
   s_control_tick = now;
+  s_tlm_tick = now;
 #endif
 #endif
   app_bringup_uart_write(banner, (uint16_t)(sizeof(banner) - 1U));
@@ -683,6 +685,11 @@ void APP_Task(void)
   }
 
   UART_Console_Task(now);
+  if ((uint32_t)(now - s_tlm_tick) >= CONSOLE_TLM_PERIOD_MS)
+  {
+    s_tlm_tick = now;
+    UART_Console_QueueMachineTelemetry();
+  }
   if ((uint32_t)(now - s_uart_tick) >= CONSOLE_STATUS_PERIOD_MS)
   {
     s_uart_tick = now;

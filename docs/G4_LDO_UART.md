@@ -1,72 +1,186 @@
-# G4 firmware brief: talk to the LDO G0 over UART
+# G4 firmware brief: LDO G0 link, fan, bleeder, H7/debug
 
-This file is for the **G4 / DCDC** CubeMX+firmware chat (`Digital_PSU_G474RCT` and the new shared-board schematic). The G0 LDO side is already matched to the 2026-08-30 schematics in `kavper/LDO_controller` (branch `cursor/g0-hw-rev-cubemx-19b5`, PR on that repo).
+For the **G4 / DCDC** CubeMX+firmware chat (`Digital_PSU_G474RCT`, new shared PCB dated 2026-08-30). G0 LDO firmware lives in `kavper/LDO_controller` branch `cursor/g0-hw-rev-cubemx-19b5`.
 
-Do **not** copy the old G4 USART2 mapping (PB3/PB4). That was the previous board. The new common PCB uses different G4 pins.
+Do **not** reuse the old G4 USART2 mapping (PB3/PB4). That board is gone.
 
-## Schematic: what is OK vs what is not
+## Roles on the new board
 
-UART isolator (G0 `U26` ISO6721RBDR) is electrically correct if G4 drives the nets as below. Channel directions:
+| MCU | Job |
+|---|---|
+| **G0** | LDO: DAC setpoints, MCP3464 VIN/VOUT/IOUT, 4× NTC, OUT_OFF, CC/CV sense. **No fan GPIO, no BLEED_ON GPIO.** Computes `bleed` + `fan` requests and streams telemetry. |
+| **G4** | DCDC + **owns the fan** + **drives BLEED_ON / REMOTE_ON / POWER_PERMIT_G4**. Talks to G0 over isolated UART. Forwards G0 telemetry to H7, or until H7 is ready **prints the same line on a debug UART to a PC**. |
+| **H7** | Later: UI / PD / logging. Same payload G4 already parsed. |
 
-| Isolator pin | Net | Direction |
+```
+PC debug UART  <── G4 USART? (until H7 exists)
+H7 USART1      <── G4 PC4 TX / PC5 RX  (nets USART1_TX_H7 / USART1_RX_H7)
+G0 USART2      <── isolator ──> G4 PB14 TX / PB15 RX  (nets USART2_*_G0, use USART3)
+```
+
+## CubeMX pinout G4 (new schematic)
+
+### UART to G0 (isolator, net names are from G0)
+
+ISO6721RBDR on the G0 sheet:
+
+| Isolator | Net | Meaning |
 |---|---|---|
-| 2 INA (G4 side) | `USART2_TX_G0` | **G4 TX → G0 RX** |
-| 7 OUTA (G0 side) | `STM_RX_G0` | into G0 **PA3** USART2_RX |
-| 6 INB (G0 side) | `STM_TX_G0` | from G0 **PA2** USART2_TX |
-| 3 OUTB (G4 side) | `USART2_RX_G0` | **G0 TX → G4 RX** |
+| INA pin 2 | `USART2_TX_G0` | **G4 TX → G0 RX** |
+| OUTA pin 7 | `STM_RX_G0` | G0 PA3 USART2_RX |
+| INB pin 6 | `STM_TX_G0` | G0 PA2 USART2_TX |
+| OUTB pin 3 | `USART2_RX_G0` | **G0 TX → G4 RX** |
 
-The name `USART2_*_G0` is from the **G0** USART2, not from the G4 peripheral. On G474, **PB14/PB15 are USART3**, not USART2.
+On G474 **PB14/PB15 = USART3 AF7**, not USART2.
 
-G4 schematic MCU sheet: `USART2_TX_G0` on **PB14**, `USART2_RX_G0` on **PB15**, header J6.
+- USART3 TX = **PB14** label `USART2_TX_G0`
+- USART3 RX = **PB15** label `USART2_RX_G0`
+- 115200 8N1, RX interrupt or DMA
+- Header J6 is the same nets (handy for a USB-UART sniffer)
 
-**G4 CubeMX must be:**
+### UART to H7
 
-- Peripheral: **USART3** (AF7 on PB14/PB15), **not** USART2
-- PB14 = USART3_TX, label `USART2_TX_G0`
-- PB15 = USART3_RX, label `USART2_RX_G0`
-- 115200 8N1, no flow control
-- NVIC USART3 RX interrupt (or DMA) so you do not poll-block
+- USART1 TX = **PC4** `USART1_TX_H7`
+- USART1 RX = **PC5** `USART1_RX_H7`
+- Same 115200 8N1. Until H7 firmware exists, G4 should also dump every G0 `TLM` line on whatever UART is wired to a computer (ST-LINK VCP or a spare USART). **Do not invent a second protocol** — forward the G0 line as-is.
 
-Old `Digital_PSU_G474RCT.ioc` still has USART2 on **PB3/PB4**. That will **not** reach the isolator on the new PCB. Move it.
+### Fan (G4 only)
 
-`POWER_PERMIT_G4` (G0 opto U28) is independent of UART: when G4 asserts it, G0 `POWER_KILL` goes low and the analog `OUT OFF` OR-gate kills the LDO FET even if firmware is wedged. Wire that GPIO on G4 and document polarity from the G4 schematic.
+- **PA6** `FAN_PWM` (TIM PWM, transistor Q9)
+- **PA5** `FAN_TACH` (input capture)
 
-Hardware gaps on G0 (do not expect G0 GPIO for these): `BLEED_ON` and `REMOTE_ON` are **not** connected to the G0 MCU on this revision.
+Duty comes from G0 field `fan` (0..100 %). Apply it to FAN_PWM. TACH is local to G4 (stall detect); G0 does not have tach.
 
-## How G0 speaks today
+Suggested local failsafe if G0 telemetry is older than 500 ms: hold last duty, or 40 % failsafe, never 0 % if MOSFETs were recently hot.
 
-G0 USART2 is already 115200 8N1 on PA2/PA3.
+### Actuators G4 must drive (not on G0 MCU)
 
-Bring-up **stage 6** (current `APP_BRINGUP_STAGE`) uses the **text console**, not the binary frames:
+| G4 pin | Net | What G0 asks |
+|---|---|---|
+| **PB4** | `BLEED_ON` | `bleed=1` → turn bleeder MOSFET on |
+| **PB5** | `REMOTE_ON` | not requested by G0 yet; leave off unless UI asks |
+| **PB6** | `POWER_PERMIT_G4` | G4 policy: only when DCDC rail is safe. Opto on G0 pulls `POWER_KILL` and analog-kills the LDO FET. |
+
+Confirm GPIO polarity on the G4/LDO sheets when you first bring up (active-high assumed for `BLEED_ON` / `REMOTE_ON` / `POWER_PERMIT_G4`).
+
+## What G0 measures and why G4 cares
+
+NTC on G0 ADC1 (centi-degC in telemetry, `t1`…`t4`):
+
+| Field | Sensor | Fan? |
+|---|---|---|
+| t1 | MOSFET | yes (hottest of t1/t3/t4) |
+| t2 | ambient | advisory (+5 °C vs hottest) |
+| t3 | bleeder resistor | yes |
+| t4 | 3V3 / 15-to-5 area | yes |
+
+Invalid temperature is `INT32_MIN` in ASCII (`-2147483648`) or `INT16_MIN` in binary.
+
+G0 also reports VIN, VOUT, IOUT, DAC readbacks, CC/CV, PGOOD, POWER_KILL.
+
+## Bleeder policy (G0 computes, G4 drives PB4)
+
+G0 **cannot** toggle `BLEED_ON`. It sets `bleed` in telemetry. G4 copies that bit to PB4.
+
+Rules now in G0 (`bleeder.c`):
+
+- Output **ON** and **setpoint** `< 4.000 V` → bleed ON (minimum load).
+- Output **ON** and setpoint `≥ 4.200 V` → bleed OFF (0.2 V hysteresis).
+- Output **OFF** and VOUT `> 0.500 V` → bleed ON (discharge).
+- Output **OFF** and VOUT `< 0.200 V` for 500 ms → bleed OFF.
+
+Do **not** re-implement a different curve on G4 unless the G0 flag is missing.
+
+## Fan policy (G0 computes percent, G4 PWMs PA6)
+
+`fan` is 0..100. Curve on G0 (`fan_request.c`):
+
+- hottest of MOSFET / bleeder / PSU NTC
+- `≤ 30.00 °C` → 20 % (keep spinning)
+- `30.00 … 55.00 °C` → linear 20…100 %
+- `≥ 55.00 °C` → 100 %
+- no valid NTC → 40 % failsafe
+
+G4 should **not** ignore G0 and run its own thermistors unless they are extra DCDC sensors; LDO heat is on G0.
+
+## G0 → G4 feedback (implement this first)
+
+G0 USART2 115200 8N1. Bring-up **stage 6** (current) speaks ASCII. Stage **0** speaks binary frames.
+
+### ASCII machine line (stage 6, every 200 ms)
+
+One line G4 must parse and **forward unchanged** to H7 or the PC:
 
 ```
-SET V=5.000 I=0.100
-OUT ON
-OUT OFF
-STATUS
-HELP
+TLM out=0 mode=1 vset=4000 vout=3990 iset=100 iout=0 vin=12000 t1=3250 t2=2510 t3=2600 t4=2800 bleed=1 fan=35 pgood=1 kill=0 cccv=0 fault=NONE
 ```
 
-Lines end with CR, LF or CRLF. Answers are `ACK` / `NACK`. STATUS is also pushed once per second.
+| Token | Unit / meaning |
+|---|---|
+| out | 0 off, 1 on |
+| mode | 0 OFF, 1 CV, 2 CC |
+| vset / vout / vin | millivolts |
+| iset / iout | milliamps |
+| t1..t4 | centi-degC (3250 = 32.50 °C) |
+| bleed | 0/1 → G4 `BLEED_ON` |
+| fan | 0..100 → G4 `FAN_PWM` duty |
+| pgood | G0 5 V buck PGOOD |
+| kill | 1 = `POWER_KILL` low (G4 permit/opto) |
+| cccv | 1 = CC (G0 `STM_CC_CV`) |
+| fault | `NONE` or console fault name |
 
-For a product link, G0 also has a binary protocol (`UART_Protocol_Init`, `APP_BRINGUP_STAGE 0`):
+Human `STATUS` table still goes out once per second; **do not** scrape that. Use `TLM`.
 
-- Frame: `A5 5A LEN TYPE SEQ PAYLOAD CRC16_LE`
-- LEN = TYPE + SEQ + PAYLOAD
-- CRC-16/CCITT-FALSE (poly `0x1021`, init `0xFFFF`) over LEN..PAYLOAD
-- Multi-byte fields little-endian
-- Host→G0: `0x01` SET_VOLTAGE (u32 mV), `0x02` SET_CURRENT (u32 mA), `0x03` SET_OUTPUT (u8 0/1), `0x04` PING
-- G0→host: `0x80` TELEMETRY, `0x81` ACK (payload = type), `0x82` NACK
+Host→G0 ASCII (CR/LF): `SET V=5.000 I=0.100`, `OUT ON`, `OUT OFF`, `STATUS`, `HELP`.
 
-Until G4 firmware is ready, leave G0 on stage 6 and type ASCII from a USB-UART on J6, or switch G0 to stage 0 when G4 implements the binary client.
+### Binary (stage 0, every 20 ms)
 
-## G4 implementation checklist
+Frame: `A5 5A LEN TYPE SEQ PAYLOAD CRC16_LE`
 
-1. Open G4 `.ioc`, **unassign USART2 from PB3/PB4** (those pins are used elsewhere on the new MCU sheet).
-2. Assign **USART3** TX=PB14, RX=PB15, 115200 8N1, interrupt enabled.
-3. Labels must match the schematic nets so the next CubeMX regen stays readable.
-4. First smoke test: send `PING` binary or `STATUS\r\n` ASCII and expect a reply on the isolator. If nothing comes back, swap is almost always TX/RX or USART2-vs-USART3.
-5. `POWER_PERMIT_G4`: only assert when the DCDC rail is actually allowed to feed the LDO.
-6. Do not talk to G0 fan PWM/TACH — fan moved to G4 on this board.
+- LEN = TYPE+SEQ+PAYLOAD
+- CRC-16/CCITT-FALSE poly `0x1021` init `0xFFFF` over LEN..PAYLOAD
+- little-endian
 
-G0 PR with matching CubeMX: repository `kavper/LDO_controller`, branch `cursor/g0-hw-rev-cubemx-19b5`.
+G4→G0: `0x01` SET_VOLTAGE u32 mV, `0x02` SET_CURRENT u32 mA, `0x03` SET_OUTPUT u8, `0x04` PING  
+G0→G4: `0x80` TELEMETRY, `0x81` ACK, `0x82` NACK
+
+TELEMETRY payload:
+
+1. 8× u32: vout_mV, iout_mA, vin_mV, dac_cv_mV, dac_cc_mV, vset_mV, iset_mA, vpre_mV
+2. 4× u8: mode, output, **bleed_request**, pgood
+3. u32 fault flags (0 for now)
+4. 4× u16 NTC ADC raw
+5. 4× u16 NTC ADC filtered
+6. 4× i16 NTC centi-degC (`INT16_MIN` invalid)
+7. u8 **fan_request_percent**
+8. u8 power_kill
+9. u8 cc_cv
+
+Until binary is brought up, stay on stage 6 `TLM` lines.
+
+## G4 software loop (what to write)
+
+```
+every UART byte from USART3:
+  reassemble TLM line (or binary frame)
+  copy line to USART1 (H7) and/or debug UART
+
+every TLM / telemetry:
+  FAN_PWM duty = fan
+  BLEED_ON = bleed
+  optionally log TACH RPM on debug UART
+
+POWER_PERMIT_G4:
+  assert only when DCDC is in regulation and you want the LDO live
+  deassert = hardware kill on G0, independent of UART
+```
+
+First smoke test: USB-UART on J6, 115200. You should see `TLM ...` at 5 Hz from G0. Then move that parser onto USART3.
+
+## Hardware gaps (do not fight the PCB)
+
+- G0 has no `BLEED_ON` / `REMOTE_ON` / fan pins. G4 must drive them.
+- Fan PWM/TACH live only on G4 PA6/PA5.
+- Old G4 `.ioc` USART2 PB3/PB4 will not hit the isolator.
+
+G0 PR: `kavper/LDO_controller` / `cursor/g0-hw-rev-cubemx-19b5`.

@@ -3,10 +3,12 @@
 #include "app_config.h"
 #include "bleeder.h"
 #include "control.h"
+#include "fan_request.h"
 #include "main.h"
 #include "measurements.h"
 #include "usart.h"
 
+#include <limits.h>
 #include <stdbool.h>
 #include <stdint.h>
 #include <string.h>
@@ -87,6 +89,11 @@ static void uart_put_u16_le(uint8_t *buffer, uint16_t *index, uint16_t value)
 {
   buffer[(*index)++] = (uint8_t)value;
   buffer[(*index)++] = (uint8_t)(value >> 8);
+}
+
+static void uart_put_i16_le(uint8_t *buffer, uint16_t *index, int16_t value)
+{
+  uart_put_u16_le(buffer, index, (uint16_t)value);
 }
 
 static void uart_put_u32_le(uint8_t *buffer, uint16_t *index, uint32_t value)
@@ -370,9 +377,10 @@ void UART_Protocol_QueueTelemetry(void)
 {
   const Measurements_Data_t *measurements = Measurements_GetData();
   const Control_Status_t *control = Control_GetStatus();
-  uint8_t payload[56];
+  uint8_t payload[80];
   uint16_t index = 0U;
   uint8_t temperature;
+  int16_t centi;
 
   uart_put_u32_le(payload, &index, measurements->vout_mV);
   uart_put_u32_le(payload, &index, measurements->iout_mA);
@@ -397,6 +405,25 @@ void UART_Protocol_QueueTelemetry(void)
   {
     uart_put_u16_le(payload, &index, measurements->temperature_filtered[temperature]);
   }
+  for (temperature = 0U; temperature < MEASUREMENTS_TEMPERATURE_COUNT; ++temperature)
+  {
+    if ((measurements->temperature_centi_C[temperature] == INT32_MIN)
+        || (measurements->temperature_centi_C[temperature] > 32767)
+        || (measurements->temperature_centi_C[temperature] < -32767))
+    {
+      centi = INT16_MIN;
+    }
+    else
+    {
+      centi = (int16_t)measurements->temperature_centi_C[temperature];
+    }
+    uart_put_i16_le(payload, &index, centi);
+  }
+  payload[index++] = FanRequest_Percent();
+  payload[index++] = (HAL_GPIO_ReadPin(POWER_KILL_GPIO_Port, POWER_KILL_Pin)
+                      == GPIO_PIN_RESET) ? 1U : 0U;
+  payload[index++] = (HAL_GPIO_ReadPin(CC_CV_STATE_GPIO_Port, CC_CV_STATE_Pin)
+                      == CC_CV_STATE_CC_LEVEL) ? 1U : 0U;
 
   (void)uart_queue_frame(UART_PROTOCOL_TELEMETRY, s_telemetry_sequence++, payload,
                          (uint8_t)index);
