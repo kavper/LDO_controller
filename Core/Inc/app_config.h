@@ -60,12 +60,23 @@
 #define FAN_REQUEST_MIN_PERCENT            20U
 #define FAN_REQUEST_FAILSAFE_PERCENT       40U
 
-/* GPIO polarities are centralized here so board revisions need one change. */
+/*
+ * Analog OUT-OFF chain (G0 sheet 2026-08-30):
+ *   STM_OUT_OFF HIGH ──D16─┐
+ *   POWER_KILL  HIGH ──D15─┴─► U18 inverting input vs ~1.65 V
+ *                            ► analog net OUT OFF goes LOW
+ *                            ► D11 pulls Q15 (PNP) base down ► FETs off
+ * Both GPIO high = request analog off. Output can run only when BOTH
+ * STM_OUT_OFF and POWER_KILL are low. G4 POWER_PERMIT should turn the
+ * opto on so POWER_KILL is pulled low; an unprogrammed G4 leaves the
+ * 10 k pull-up + MCU pull-up and the analog stage stays killed.
+ */
 #define OUT_OFF_ASSERTED_LEVEL             GPIO_PIN_SET
 #define OUT_OFF_DEASSERTED_LEVEL           GPIO_PIN_RESET
+#define POWER_KILL_ASSERTED_LEVEL          GPIO_PIN_SET
 /* BLEED_ON is not connected to the MCU on this revision. */
 
-/* TODO: confirm the CC/CV comparator polarity on the final schematic. */
+/* STM_CC_CV is open-collector Q16 + 10 k pull-up; DS2 lights when the net is high. */
 #define CC_CV_STATE_CC_LEVEL               GPIO_PIN_SET
 #define PGOOD_ASSERTED_LEVEL               GPIO_PIN_SET
 

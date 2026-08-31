@@ -31,7 +31,7 @@ DS3 (`LED_G0` on PB0, active low) shows controller state:
 - 60 ms flash once a second: idle, 5 V PGOOD OK, output off
 - solid on: output enabled, CV
 - ~4 Hz blink: output enabled, CC
-- double-flash: G4 `POWER_KILL` or lost 5 V PGOOD
+- double-flash: analog kill (`POWER_KILL` high, G4 not permitting) or lost 5 V PGOOD
 - fast blink: console fault, output forced off
 
 Every 200 ms G0 also emits one machine `TLM` line (see `docs/G4_LDO_UART.md`)

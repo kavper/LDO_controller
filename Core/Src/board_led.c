@@ -32,7 +32,8 @@ static void board_led_write(bool on)
 
 static bool board_led_power_kill_asserted(void)
 {
-  return HAL_GPIO_ReadPin(POWER_KILL_GPIO_Port, POWER_KILL_Pin) == GPIO_PIN_RESET;
+  return HAL_GPIO_ReadPin(POWER_KILL_GPIO_Port, POWER_KILL_Pin)
+      == POWER_KILL_ASSERTED_LEVEL;
 }
 
 static bool board_led_pgood_ok(void)

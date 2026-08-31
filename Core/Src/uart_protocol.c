@@ -421,7 +421,7 @@ void UART_Protocol_QueueTelemetry(void)
   }
   payload[index++] = FanRequest_Percent();
   payload[index++] = (HAL_GPIO_ReadPin(POWER_KILL_GPIO_Port, POWER_KILL_Pin)
-                      == GPIO_PIN_RESET) ? 1U : 0U;
+                      == POWER_KILL_ASSERTED_LEVEL) ? 1U : 0U;
   payload[index++] = (HAL_GPIO_ReadPin(CC_CV_STATE_GPIO_Port, CC_CV_STATE_Pin)
                       == CC_CV_STATE_CC_LEVEL) ? 1U : 0U;
 

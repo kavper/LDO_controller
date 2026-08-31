@@ -145,6 +145,11 @@ static const char *console_preflight_fault(void)
   {
     return "PGOOD_5V";
   }
+  if (HAL_GPIO_ReadPin(POWER_KILL_GPIO_Port, POWER_KILL_Pin)
+      == POWER_KILL_ASSERTED_LEVEL)
+  {
+    return "POWER_KILL";
+  }
   if (data->vin_mV < CONSOLE_MINIMUM_VIN_MV)
   {
     return "VIN_LOW";
@@ -192,6 +197,12 @@ static const char *console_runtime_fault_condition(uint32_t now,
   {
     *confirm_ms = CONSOLE_PGOOD_CONFIRM_MS;
     return "PGOOD_LOST";
+  }
+  if (HAL_GPIO_ReadPin(POWER_KILL_GPIO_Port, POWER_KILL_Pin)
+      == POWER_KILL_ASSERTED_LEVEL)
+  {
+    *confirm_ms = CONSOLE_PGOOD_CONFIRM_MS;
+    return "POWER_KILL";
   }
   if (data->vin_mV < CONSOLE_MINIMUM_VIN_MV)
   {
@@ -465,7 +476,7 @@ void UART_Console_QueueMachineTelemetry(void)
       (unsigned int)(HAL_GPIO_ReadPin(PGOOD_5V_IN_GPIO_Port, PGOOD_5V_IN_Pin)
                      == PGOOD_ASSERTED_LEVEL),
       (unsigned int)(HAL_GPIO_ReadPin(POWER_KILL_GPIO_Port, POWER_KILL_Pin)
-                     == GPIO_PIN_RESET),
+                     == POWER_KILL_ASSERTED_LEVEL),
       (unsigned int)(HAL_GPIO_ReadPin(CC_CV_STATE_GPIO_Port, CC_CV_STATE_Pin)
                      == CC_CV_STATE_CC_LEVEL),
       (s_fault != NULL) ? s_fault : "NONE");
