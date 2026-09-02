@@ -48,19 +48,14 @@
 #define FAN_REQUEST_FAILSAFE_PERCENT       40U
 
 /*
- * Analog OUT-OFF chain (G0 sheet 2026-08-30):
- *   STM_OUT_OFF HIGH ──D16─┐
- *   POWER_KILL  HIGH ──D15─┴─► U18 inverting input vs ~1.65 V
- *                            ► analog net OUT OFF goes LOW
- *                            ► D11 pulls Q15 (PNP) base down ► FETs off
- * Both GPIO high = request analog off. Output can run only when BOTH
- * STM_OUT_OFF and POWER_KILL are low. G4 POWER_PERMIT should turn the
- * opto on so POWER_KILL is pulled low; an unprogrammed G4 leaves the
- * 10 k pull-up + MCU pull-up and the analog stage stays killed.
+ * STM_OUT_OFF high (D16) still analog-kills via U18.
+ * POWER_KILL: live board polarity is active-low. High (pull-up) = G4
+ * permitting / not killing. Low = kill. G4 POWER_PERMIT must leave this
+ * net high for the LDO to run; pulling it low forces analog off.
  */
 #define OUT_OFF_ASSERTED_LEVEL             GPIO_PIN_SET
 #define OUT_OFF_DEASSERTED_LEVEL           GPIO_PIN_RESET
-#define POWER_KILL_ASSERTED_LEVEL          GPIO_PIN_SET
+#define POWER_KILL_ASSERTED_LEVEL          GPIO_PIN_RESET
 /* BLEED_ON is not connected to the MCU on this revision. */
 
 /* STM_CC_CV is open-collector Q16 + 10 k pull-up; DS2 lights when the net is high. */

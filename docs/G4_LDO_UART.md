@@ -59,13 +59,11 @@ Suggested local failsafe if G0 telemetry is older than 500 ms: hold last duty, o
 |---|---|---|
 | **PB4** | `BLEED_ON` | `bleed=1` → turn bleeder MOSFET on |
 | **PB5** | `REMOTE_ON` | not requested by G0 yet; leave off unless UI asks |
-| **PB6** | `POWER_PERMIT_G4` | Drive so the G0 opto pulls `POWER_KILL` **low** (permit). Release = `POWER_KILL` high = analog kill. |
-
-Polarities from the 2026-08-30 G0 analog sheet:
+| **PB6** | `POWER_PERMIT_G4` | Leave G0 `POWER_KILL` **high** (permit). Pull it **low** to kill. |
 
 - `BLEED_ON` high → Q13 N-FET on.
-- `STM_OUT_OFF` **high** or `POWER_KILL` **high** → diode-OR → U18 → analog `OUT OFF` **low** → Q15 on → LDO FETs off.
-- G4 `POWER_PERMIT_G4` must light the opto so `POWER_KILL` is **low**. Unprogrammed G4 leaves pull-ups and the analog stage stays killed.
+- `STM_OUT_OFF` **high** → analog off.
+- `POWER_KILL` **low** = kill (`kill=1`). High (pull-up) = permit (`kill=0`).
 - `STM_CC_CV` high = CC (DS2 on). G0 DS3 is active-low.
 
 ## What G0 measures and why G4 cares
@@ -130,7 +128,7 @@ TLM out=0 mode=1 vset=4000 vout=3990 iset=100 iout=0 vin=12000 t1=3250 t2=2510 t
 | bleed | 0/1 → G4 `BLEED_ON` |
 | fan | 0..100 → G4 `FAN_PWM` duty |
 | pgood | G0 5 V buck PGOOD |
-| kill | 1 = analog kill asserted (`POWER_KILL` **high**; G4 is not permitting) |
+| kill | 1 = kill asserted (`POWER_KILL` **low**) |
 | cccv | 1 = CC (`STM_CC_CV` high, DS2 on) |
 | fault | `NONE` or console fault name |
 
@@ -149,13 +147,12 @@ every TLM / telemetry:
   optionally log TACH RPM on debug UART
 
 POWER_PERMIT_G4:
-  drive so the G0 opto pulls POWER_KILL **low** (permit)
-  release / Hi-Z = POWER_KILL high = analog kill, independent of UART
+  keep G0 POWER_KILL **high** (permit)
+  pull POWER_KILL **low** = kill, independent of UART
 ```
 
 First smoke test: USB-UART on J6, 115200. You should see `TLM ...` at 5 Hz from G0.
-With G4 unprogrammed expect `kill=1` and DS3 double-flash; `OUT ON` NACKs `POWER_KILL`.
-Then move that parser onto USART3.
+Idle pull-up → `kill=0`. `OUT ON` NACKs `POWER_KILL` only when the net is low.
 
 ## Hardware gaps (do not fight the PCB)
 

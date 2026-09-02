@@ -12,7 +12,7 @@ OUT OFF
 ```
 
 - `SET` updates voltage and current-limit setpoints. Does not enable the output.
-- `OUT ON` enables `STM_OUT_OFF` only after PGOOD, POWER_KILL (must be low), VIN,
+- `OUT ON` enables `STM_OUT_OFF` only after PGOOD, POWER_KILL (must be high / not killed), VIN,
   VOUT≈0 and temperature checks pass.
 - `OUT OFF` asserts analog off immediately; DAC ramps to zero; `bleed` requests
   discharge if VOUT is still up.
@@ -31,6 +31,5 @@ See `docs/G4_LDO_UART.md`. G4 must copy `bleed` and `fan` to its GPIOs.
 
 ## Protection (output forced OFF)
 
-POWER_KILL high, PGOOD lost, VIN low, overtemperature, VOUT overshoot, DAC
-readback error. `kill=1` means G4 is not permitting; analog FETs stay off
-regardless of UART.
+POWER_KILL low, PGOOD lost, VIN low, overtemperature, VOUT overshoot, DAC
+readback error. `kill=1` means `POWER_KILL` is low.
