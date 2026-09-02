@@ -23,20 +23,19 @@ typedef enum
 } MCP3464_Register_t;
 
 /*
- * U11 MCP3464 channel wiring from Schematic_Prints.PDF:
- * differential power-path measurements use the corresponding P/N pair,
- * while DAC_CC and DAC_CV are measured single-ended against AGND.
+ * U29 MCP3464T-E/NC (ADC DAC.SchDoc 2026-08-30):
+ * CH0/1 = DAC CV/CC single-ended, CH2/3 VOUT, CH4/5 IOUT, CH6/7 VIN.
  */
 typedef enum
 {
-  MCP3464_CHANNEL_VOUT_P = 0U,
-  MCP3464_CHANNEL_VOUT_N = 1U,
-  MCP3464_CHANNEL_DAC_CC = 2U,
-  MCP3464_CHANNEL_DAC_CV = 3U,
-  MCP3464_CHANNEL_IOUT_P = 4U,
-  MCP3464_CHANNEL_IOUT_N = 5U,
-  MCP3464_CHANNEL_VIN_P  = 6U,
-  MCP3464_CHANNEL_VIN_N  = 7U
+  MCP3464_CHANNEL_DAC_CV = 0U, /* CH0 ADC_DAC_CV */
+  MCP3464_CHANNEL_DAC_CC = 1U, /* CH1 ADC_DAC_CC */
+  MCP3464_CHANNEL_VOUT_P = 2U, /* CH2 ADC_VOUT_P */
+  MCP3464_CHANNEL_VOUT_N = 3U, /* CH3 ADC_VOUT_N */
+  MCP3464_CHANNEL_IOUT_P = 4U, /* CH4 ADC_IOUT_P (3V_REFR) */
+  MCP3464_CHANNEL_IOUT_N = 5U, /* CH5 ADC_IOUT_N (INA241 OUT) */
+  MCP3464_CHANNEL_VIN_P  = 6U, /* CH6 ADC_VIN_P */
+  MCP3464_CHANNEL_VIN_N  = 7U  /* CH7 ADC_VIN_N */
 } MCP3464_BoardChannel_t;
 
 HAL_StatusTypeDef MCP3464_Init(SPI_HandleTypeDef *hspi);

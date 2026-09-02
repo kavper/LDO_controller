@@ -172,7 +172,7 @@ void MCP3464_DataReadyFlagFromISR(void)
 HAL_StatusTypeDef MCP3464_Init(SPI_HandleTypeDef *hspi)
 {
   HAL_StatusTypeDef status;
-  const uint8_t gain_calibration[3] = {0x7AU, 0xC1U, 0x00U};
+  const uint8_t gain_calibration[3] = {0x80U, 0x00U, 0x00U};
   uint8_t value;
 
   if (hspi == NULL)
@@ -208,8 +208,7 @@ HAL_StatusTypeDef MCP3464_Init(SPI_HandleTypeDef *hspi)
   }
 
   /*
-   * Digital gain 31425/32768 = 0.9590149 leaves headroom for the measured
-   * positive ADC gain error, so a 0..3 V DAC sweep does not saturate at 0x7FFF.
+   * Digital GAINCAL = 1.000. Board DMM trim comes later.
    */
   status = MCP3464_WriteRegister(MCP3464_REG_GAINCAL, gain_calibration,
                                  sizeof(gain_calibration));

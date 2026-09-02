@@ -76,51 +76,41 @@
 #define MCP3464_EXTERNAL_VREF_MV            3000U
 
 /*
- * The four 10 kOhm NTC dividers are supplied from 3V_REFR, the same rail
- * as ADC1 VREF+. RT1/RT2 are 103AT-2; T3/T4 use 10 kOhm resistors.
+ * NTC: 10 k pull-up to 3V_REFR, STM32 ADC1 VREF+ is +3V3R.
+ * RT1/RT2 103AT-2; T3/T4 10 k NTC.
  */
-#define TEMPERATURE_ADC_REFERENCE_MV        3000U
+#define TEMPERATURE_ADC_REFERENCE_MV        3300U
 #define TEMPERATURE_DIVIDER_SUPPLY_MV       3000U
 #define TEMPERATURE_NTC_NOMINAL_OHM         10000U
 #define TEMPERATURE_NTC_NOMINAL_KELVIN_X100 29815U
 #define TEMPERATURE_NTC_BETA_103AT2_K       3435U
 #define TEMPERATURE_NTC_BETA_NCP18_K        3434U
 
-/*
- * Board calibration. Gain values are expressed in ppm relative to the ideal
- * transfer function. VIN and VOUT were calibrated independently against an
- * external DMM at five points on 2026-07-23.
- */
-#define MCP3464_VIN_GAIN_PPM                 1001323L
-#define MCP3464_VOUT_GAIN_PPM                1004656L
-#define MCP3464_IOUT_GAIN_PPM                995896L
-#define MCP3464_DAC_CC_GAIN_PPM              998688L
-#define MCP3464_DAC_CV_GAIN_PPM              993103L
-#define MCP3464_VOUT_ZERO_RAW                (-12L)
-#define MCP3464_IOUT_ZERO_RAW                14L
-#define MCP3464_VIN_ZERO_RAW                 (-7L)
-#define MCP3464_DAC_CC_ZERO_RAW              (-3L)
-#define MCP3464_DAC_CV_ZERO_RAW              (-3L)
+/* Nominal MCP3464 scale (DMM calibration later). */
+#define MCP3464_VIN_GAIN_PPM                 1000000L
+#define MCP3464_VOUT_GAIN_PPM                1000000L
+#define MCP3464_IOUT_GAIN_PPM                1000000L
+#define MCP3464_DAC_CC_GAIN_PPM              1000000L
+#define MCP3464_DAC_CV_GAIN_PPM              1000000L
+#define MCP3464_VOUT_ZERO_RAW                0L
+#define MCP3464_IOUT_ZERO_RAW                0L
+#define MCP3464_VIN_ZERO_RAW                 0L
+#define MCP3464_DAC_CC_ZERO_RAW              0L
+#define MCP3464_DAC_CV_ZERO_RAW              0L
 
 /*
- * Complete CV output-path calibration against the same DMM:
- *   Vout = 0.990295342 * nominal_DAC_voltage + 8.231677 mV
- * Control_VoltageToDacRaw() applies the inverse transfer function.
+ * Analog front-end, G0 sheet 2026-08-30, no DMM trim.
+ * VOUT U34: DC gain 15k/180k. VIN U30: 15k/(180k+33k).
+ * IOUT INA241A1 gain 10, shunt R108 50 mOhm, ADC sees 3V_REFR - Vout.
+ * Analog CC I_MON U32A gain 10k/1k = 10.
  */
-#define CV_OUTPUT_GAIN_PPM                   990295L
-#define CV_OUTPUT_OFFSET_UV                  8232L
-
-/*
- * Analog measurement paths from the board schematic/BOM.
- * The assembled board has R87 fitted and R84 not fitted, giving current gain
- * x10. Never fit both: that would bypass the R69 current-sense shunt.
- */
-#define VOLTAGE_SENSE_INPUT_RESISTANCE_OHM   160000L
-#define VOLTAGE_SENSE_FEEDBACK_RESISTANCE_OHM 17400L
+#define VOUT_DIFFAMP_INPUT_OHM               180000L
+#define VOUT_DIFFAMP_FEEDBACK_OHM            15000L
+#define VIN_DIFFAMP_INPUT_OHM                213000L
+#define VIN_DIFFAMP_FEEDBACK_OHM             15000L
 #define CURRENT_SENSE_SHUNT_MILLIOHM         50L
 #define CURRENT_SENSE_AMPLIFIER_GAIN         10L
-/* U17A analog current-limit path: 1 + R72/R75 = 1 + 100k/10k = 11. */
-#define CURRENT_LIMIT_AMPLIFIER_GAIN          11L
+#define CURRENT_LIMIT_AMPLIFIER_GAIN         10L
 
 /* Interactive console safety thresholds. */
 #define CONSOLE_TLM_PERIOD_MS                200U
