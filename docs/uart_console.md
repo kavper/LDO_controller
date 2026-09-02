@@ -33,3 +33,5 @@ See `docs/G4_LDO_UART.md`. G4 must copy `bleed` and `fan` to its GPIOs.
 
 POWER_KILL high, PGOOD lost, VIN low, overtemperature, VOUT overshoot, DAC
 readback error. `kill=1` means `POWER_KILL` is high (analog FETs held off).
+G4 must drive `POWER_PERMIT_G4` **PB6 high** (or jumper G0 PB1 to GND) before
+`OUT ON` can produce VOUT. See `docs/G4_LDO_UART.md`.

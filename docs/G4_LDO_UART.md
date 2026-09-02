@@ -59,7 +59,44 @@ Suggested local failsafe if G0 telemetry is older than 500 ms: hold last duty, o
 |---|---|---|
 | **PB4** | `BLEED_ON` | `bleed=1` → turn bleeder MOSFET on |
 | **PB5** | `REMOTE_ON` | not requested by G0 yet; leave off unless UI asks |
-| **PB6** | `POWER_PERMIT_G4` | Light the G0 opto so `POWER_KILL` goes **low** (permit). High/Hi-Z = analog kill. |
+| **PB6** | `POWER_PERMIT_G4` | **GPIO output PP. HIGH = permit** (opto LED on → G0 `POWER_KILL` low). LOW or Hi-Z = kill. |
+
+### POWER_PERMIT on G4 (must match analog)
+
+G0 analog: `POWER_KILL` **high** (10 k pull-up) **or** `STM_OUT_OFF` high → FETs off. G0 firmware already uses that: `OUT ON` NACKs unless `POWER_KILL` is low; `kill=1` in TLM means the pin is still high.
+
+On G4 **CubeMX** (G474, `.ioc`):
+
+1. Pinout view: **PB6** → `GPIO_Output` (not USART, not analog).
+2. Configuration → GPIO: User Label `POWER_PERMIT_G4`.
+3. GPIO mode: **Output Push Pull**.
+4. GPIO Pull-up/Pull-down: **No pull-up and no pull-down**.
+5. Maximum output speed: Low.
+6. GPIO output level: **Low** (reset = analog kill). Generate Code.
+
+Same for **PB4** `BLEED_ON` and **PB5** `REMOTE_ON`: GPIO_Output PP, reset **Low**.
+
+Do **not** leave PB6 as input/Hi-Z. After `MX_GPIO_Init()`:
+
+```c
+/* Permit LDO analog (opto LED on → G0 POWER_KILL low). Call only when DCDC is OK. */
+HAL_GPIO_WritePin(POWER_PERMIT_G4_GPIO_Port, POWER_PERMIT_G4_Pin, GPIO_PIN_SET);
+
+/* Kill LDO analog immediately (DCDC fault / E-stop). */
+HAL_GPIO_WritePin(POWER_PERMIT_G4_GPIO_Port, POWER_PERMIT_G4_Pin, GPIO_PIN_RESET);
+```
+
+- `GPIO_PIN_SET` (3.3 V) = permit.
+- `GPIO_PIN_RESET` (0 V) = kill.
+
+Sequence:
+
+1. Boot: PB6 = 0. G0 TLM `kill=1`.
+2. DCDC OK → PB6 = 1. G0 TLM becomes `kill=0`.
+3. UART to G0: `SET V=… I=…` then `OUT ON`.
+4. Any DCDC fault → PB6 = 0 immediately (hardware kill, do not wait for UART).
+
+Bench without G4 firmware: jumper G0 `POWER_KILL` (PB1) to GND, then `SET` / `OUT ON`.
 
 - `BLEED_ON` high → Q13 N-FET on.
 - `STM_OUT_OFF` **high** or `POWER_KILL` **high** → analog FETs off.
@@ -147,9 +184,10 @@ every TLM / telemetry:
   BLEED_ON = bleed
   optionally log TACH RPM on debug UART
 
-POWER_PERMIT_G4:
-  pull G0 POWER_KILL **low** (permit / analog live)
-  release = POWER_KILL high = analog kill, independent of UART
+POWER_PERMIT_G4 (PB6, push-pull):
+  GPIO_PIN_SET  = permit (G0 POWER_KILL low, kill=0, analog live)
+  GPIO_PIN_RESET = kill  (G0 POWER_KILL high, kill=1)
+  reset/boot must be LOW until DCDC is OK
 ```
 
 First smoke test: USB-UART on J6, 115200. Idle pull-up → `kill=1`. Bench without G4: jumper `POWER_KILL` to GND, then `SET` / `OUT ON`.
