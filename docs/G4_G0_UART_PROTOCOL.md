@@ -157,10 +157,10 @@ TLM out=0 mode=0 vset=0 vout=8 iset=0 iout=0 vin=9600 t1=3250 t2=2510 t3=2600 t4
 | Token | Type | Unit / meaning |
 |---|---|---|
 | `out` | 0/1 | Software output enable (1 = G0 released analog off **in software**) |
-| `mode` | 0/1/2 | `0` OFF, `1` CV, `2` CC |
+| `mode` | 0/1/2 | `0` OFF, `1` CV, `2` CC. **Status only** — not a fault |
 | `vset` | uint | Voltage **setpoint mV** |
 | `vout` | uint | Measured VOUT **mV** |
-| `iset` | uint | Current-limit **setpoint mA** |
+| `iset` | uint | Current-limit **setpoint mA** (analog CC holds this) |
 | `iout` | uint | Measured IOUT **mA** |
 | `vin` | uint | Measured VIN **mV** |
 | `t1` | int | MOSFET NTC, **centi-°C** (`3250` = 32.50 °C) |
@@ -172,7 +172,7 @@ TLM out=0 mode=0 vset=0 vout=8 iset=0 iout=0 vin=9600 t1=3250 t2=2510 t3=2600 t4
 | `pgood` | 0/1 | G0 5 V buck PGOOD high |
 | `kill` | 0/1 | `1` = `POWER_KILL` **high** = analog FETs held off |
 | `outoff` | 0/1 | Raw PA15 `STM_OUT_OFF` (`1` = high = analog off request) |
-| `cccv` | 0/1 | `1` = CC (`STM_CC_CV` high) |
+| `cccv` | 0/1 | `1` = analog current limit (`STM_CC_CV` high). **Do not kill DCDC or PB6.** |
 | `fault` | string | `NONE` or last fault name (no spaces) |
 
 Invalid temperature: `-2147483648` (`INT32_MIN`). Treat as missing; do not use for fan.
@@ -200,7 +200,9 @@ G0 forces output OFF and sends:
 NACK FAULT=POWER_KILL; OUTPUT FORCED OFF
 ```
 
-`FAULT=` names: `HW_INIT`, `PGOOD_LOST`, `POWER_KILL`, `VIN_LOW`, `VOUT_HARD`, `VOUT_HIGH`, `TEMPERATURE`, `DAC_CV_FB`, `DAC_CC_FB`.
+`FAULT=` names: `HW_INIT`, `PGOOD_LOST`, `POWER_KILL`, `VIN_LOW`, `VOUT_HARD`, `VOUT_HIGH`, `TEMP_HIGH`.
+
+**Current limit is not a fault.** Analog CC holds `iset` and lets `vout` fall below `vset`. TLM `mode=2` / `cccv=1` is informational. G4 must **not** send `OUT OFF`, drop PB6, or fold the DCDC voltage because of CC.
 
 On `POWER_KILL` / DCDC collapse: G4 must also drop **PB6 immediately** (hardware kill). Do not wait for UART.
 
@@ -275,7 +277,13 @@ G4: SET V=5.000 I=0.100\r\n
 G0: ACK SET V=5.000 I=0.100 OUT=OFF\r\n
 G4: OUT ON\r\n
 G0: ACK OUT ON\r\n
-G0: TLM out=1 mode=1 vset=5000 vout=4990 iset=100 iout=20 vin=9600 ... kill=0 outoff=0 fault=NONE
+G0: TLM out=1 mode=1 vset=5000 vout=4990 iset=100 iout=20 vin=9600 ... kill=0 outoff=0 cccv=0 fault=NONE
+```
+
+Load steps into analog CC (output stays **on**; G4 must not trip):
+
+```
+G0: TLM out=1 mode=2 vset=5000 vout=1800 iset=100 iout=100 vin=9600 ... cccv=1 fault=NONE
 ```
 
 If G4 skipped PB6:
@@ -323,6 +331,7 @@ HAL_UART_Transmit(huart3, (uint8_t *)"OUT OFF\r\n", 9, 10);
 - [ ] Commands: only `SET V=… I=…`, `OUT ON`, `OUT OFF`
 - [ ] Parse `TLM` every ~200 ms; forward unmodified
 - [ ] Permit (`kill=0`) **before** `OUT ON`
+- [ ] `mode=2` / `cccv=1` = analog CC; keep VIN at Vset+dropout, do not trip
 - [ ] No binary protocol, no HELP/STATUS
 
 G0 host notes: `docs/uart_console.md`. Hardware/CubeMX: `docs/G4_LDO_UART.md`.

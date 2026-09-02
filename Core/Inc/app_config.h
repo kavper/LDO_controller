@@ -20,6 +20,8 @@
 #define CONTROL_VOLTAGE_RAMP_MV_PER_MS     50U
 #define CONTROL_CURRENT_RAMP_MA_PER_MS     10U
 #define CONTROL_MODE_FILTER_MS             10U
+/* Ignore brief POWER_KILL glitches on a load step into analog CC. */
+#define CONTROL_KILL_CONFIRM_MS            50U
 
 /* Preregulator request limits. TODO: confirm against the preregulator hardware. */
 #define VPRE_MIN_MV                        3000U
@@ -115,13 +117,10 @@
 #define CONSOLE_VOUT_OVERSHOOT_PERCENT         10U
 #define CONSOLE_VOUT_HARD_OVERSHOOT_MIN_MV  3000U
 #define CONSOLE_VOUT_HARD_OVERSHOOT_PERCENT    20U
-#define CONSOLE_DAC_READBACK_TOLERANCE_MV     75U
-#define CONSOLE_DAC_SETTLE_MS                 750U
 #define CONSOLE_PGOOD_CONFIRM_MS               50U
 #define CONSOLE_VIN_CONFIRM_MS                250U
 #define CONSOLE_VOUT_OV_CONFIRM_MS            100U
 #define CONSOLE_VOUT_HARD_OV_CONFIRM_MS        10U
 #define CONSOLE_TEMPERATURE_CONFIRM_MS        500U
-#define CONSOLE_DAC_READBACK_CONFIRM_MS       300U
 
 #endif /* APP_CONFIG_H */

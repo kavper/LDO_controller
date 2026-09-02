@@ -3,7 +3,6 @@
 #include "app_config.h"
 #include "dac8562.h"
 #include "main.h"
-#include "measurements.h"
 #include "output_ctrl.h"
 
 #include <limits.h>
@@ -12,6 +11,7 @@ static Control_Status_t s_status;
 static Control_Mode_t s_filtered_mode;
 static GPIO_PinState s_mode_candidate;
 static uint8_t s_mode_stable_ms;
+static uint8_t s_kill_ms;
 static uint16_t s_last_cv_raw;
 static uint16_t s_last_cc_raw;
 
@@ -138,12 +138,13 @@ static void control_update_vpre_request(void)
   {
     request = VPRE_MIN_MV;
   }
-  else if (s_status.mode == CONTROL_MODE_CC)
-  {
-    request = Measurements_GetData()->vout_mV + VPRE_MARGIN_MV;
-  }
   else
   {
+    /*
+     * Keep VIN headroom at Vset + dropout in CV and CC. Tracking VOUT down
+     * in current limit collapses the preregulator and looks like a trip.
+     * Analog CC already holds Iset; firmware must not fold the source.
+     */
     request = s_status.voltage_applied_mV + VPRE_MARGIN_MV;
   }
 
@@ -168,6 +169,7 @@ void Control_Init(void)
   s_filtered_mode = CONTROL_MODE_CV;
   s_mode_candidate = HAL_GPIO_ReadPin(CC_CV_STATE_GPIO_Port, CC_CV_STATE_Pin);
   s_mode_stable_ms = 0U;
+  s_kill_ms = 0U;
   s_last_cv_raw = UINT16_MAX;
   s_last_cc_raw = UINT16_MAX;
 
@@ -184,7 +186,18 @@ void Control_Task1ms(void)
       && (HAL_GPIO_ReadPin(POWER_KILL_GPIO_Port, POWER_KILL_Pin)
           == POWER_KILL_ASSERTED_LEVEL))
   {
-    Control_SetOutputEnabled(false);
+    if (s_kill_ms < CONTROL_KILL_CONFIRM_MS)
+    {
+      ++s_kill_ms;
+    }
+    if (s_kill_ms >= CONTROL_KILL_CONFIRM_MS)
+    {
+      Control_SetOutputEnabled(false);
+    }
+  }
+  else
+  {
+    s_kill_ms = 0U;
   }
 
   voltage_ramp_target = s_status.output_enabled ? s_status.voltage_target_mV : 0U;

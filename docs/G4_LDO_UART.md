@@ -103,7 +103,9 @@ Bench without G4 firmware: jumper G0 `POWER_KILL` (PB1) to GND, then `SET` / `OU
 - `BLEED_ON` high → Q13 N-FET on.
 - `STM_OUT_OFF` **high** or `POWER_KILL` **high** → analog FETs off.
 - `POWER_KILL` **high** = kill (`kill=1`). G4 must pull it **low** for VOUT.
-- `STM_CC_CV` high = CC (DS2 on). G0 DS3 is active-low.
+- `STM_CC_CV` high = CC (DS2 on). G0 DS3 is active-low. CC is analog current
+  limit: G0 keeps DACs at Vset/Iset and only reports `mode=2` / `cccv=1`.
+  G4 must not treat CC as a fault or collapse VIN.
 
 ## What G0 measures and why G4 cares
 

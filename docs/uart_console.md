@@ -12,6 +12,8 @@ OUT OFF
 ```
 
 - `SET` updates voltage and current-limit setpoints. Does not enable the output.
+  Analog CV holds `V=`; analog CC holds `I=`. `mode` / `cccv` only report which
+  loop is winning. Hitting the current limit does **not** turn the output off.
 - `OUT ON` enables `STM_OUT_OFF` only after PGOOD, POWER_KILL (must be **low**), VIN,
   VOUT≈0 and temperature checks pass.
 - `OUT OFF` asserts analog off immediately; DAC ramps to zero; `bleed` requests
@@ -31,7 +33,8 @@ Full G4 paste-spec: `docs/G4_G0_UART_PROTOCOL.md`. Pins/policy: `docs/G4_LDO_UAR
 
 ## Protection (output forced OFF)
 
-POWER_KILL high, PGOOD lost, VIN low, overtemperature, VOUT overshoot, DAC
-readback error. `kill=1` means `POWER_KILL` is high (analog FETs held off).
+POWER_KILL high (debounced), PGOOD lost, VIN low, overtemperature, VOUT
+overshoot above the CV setpoint. Current limit and DAC readback are **not**
+trips. `kill=1` means `POWER_KILL` is high (analog FETs held off).
 G4 must drive `POWER_PERMIT_G4` **PB6 high** (or jumper G0 PB1 to GND) before
 `OUT ON` can produce VOUT. See `docs/G4_LDO_UART.md`.

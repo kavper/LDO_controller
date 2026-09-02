@@ -17,14 +17,8 @@
 static bool s_mcp_ok;
 static bool s_dac_ok;
 static const char *s_fault;
-static uint32_t s_dac_settle_until;
 static const char *s_fault_candidate;
 static uint32_t s_fault_candidate_since;
-
-static uint32_t console_abs_difference(uint32_t first, uint32_t second)
-{
-  return (first >= second) ? (first - second) : (second - first);
-}
 
 static void console_skip_spaces(const char **cursor)
 {
@@ -158,8 +152,6 @@ static const char *console_runtime_fault_condition(uint32_t now,
   const Measurements_Data_t *data = Measurements_GetData();
   const Control_Status_t *control = Control_GetStatus();
   uint32_t voltage_protection_reference_mV;
-  uint32_t expected_cv_mV;
-  uint32_t expected_cc_mV;
 
   if (!s_mcp_ok || !s_dac_ok)
   {
@@ -210,27 +202,11 @@ static const char *console_runtime_fault_condition(uint32_t now,
     *confirm_ms = CONSOLE_TEMPERATURE_CONFIRM_MS;
     return "TEMP_HIGH";
   }
-  if ((int32_t)(now - s_dac_settle_until) < 0)
-  {
-    return NULL;
-  }
-
-  expected_cv_mV = Control_DacRawToMillivolts(
-      Control_VoltageToDacRaw(control->voltage_applied_mV));
-  expected_cc_mV = Control_DacRawToMillivolts(
-      Control_CurrentToDacRaw(control->current_applied_mA));
-  if (console_abs_difference(data->dac_cv_readback_mV, expected_cv_mV)
-      > CONSOLE_DAC_READBACK_TOLERANCE_MV)
-  {
-    *confirm_ms = CONSOLE_DAC_READBACK_CONFIRM_MS;
-    return "DAC_CV_FB";
-  }
-  if (console_abs_difference(data->dac_cc_readback_mV, expected_cc_mV)
-      > CONSOLE_DAC_READBACK_TOLERANCE_MV)
-  {
-    *confirm_ms = CONSOLE_DAC_READBACK_CONFIRM_MS;
-    return "DAC_CC_FB";
-  }
+  (void)now;
+  /*
+   * Analog CC/CV loops hold Iset and Vset. DAC readback and STM_CC_CV are
+   * telemetry only — never force the output off because the supply limited.
+   */
   return NULL;
 }
 
@@ -364,6 +340,7 @@ static void console_handle_line(char *line, uint32_t now)
   uint32_t current_mA;
   const char *fault;
 
+  (void)now;
   console_normalize_line(line);
 
   if (console_parse_set(line, &voltage_mV, &current_mA))
@@ -379,7 +356,6 @@ static void console_handle_line(char *line, uint32_t now)
     }
     Control_SetVoltageTarget(voltage_mV);
     Control_SetCurrentTarget(current_mA);
-    s_dac_settle_until = now + CONSOLE_DAC_SETTLE_MS;
     s_fault_candidate = NULL;
     s_fault = "NONE";
     (void)snprintf(response, sizeof(response),
@@ -413,7 +389,6 @@ static void console_handle_line(char *line, uint32_t now)
       return;
     }
     s_fault = "NONE";
-    s_dac_settle_until = now + CONSOLE_DAC_SETTLE_MS;
     s_fault_candidate = NULL;
     Control_SetOutputEnabled(true);
     (void)UART_Protocol_QueueText("ACK OUT ON\r\n");
@@ -445,7 +420,6 @@ void UART_Console_Init(bool mcp_ok, bool dac_ok)
   s_mcp_ok = mcp_ok;
   s_dac_ok = dac_ok;
   s_fault = "NONE";
-  s_dac_settle_until = 0U;
   s_fault_candidate = NULL;
   s_fault_candidate_since = 0U;
 }
