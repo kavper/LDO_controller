@@ -182,8 +182,18 @@ void Control_Init(void)
 
 void Control_Task1ms(void)
 {
-  uint32_t voltage_ramp_target = s_status.output_enabled ? s_status.voltage_target_mV : 0U;
-  uint32_t current_ramp_target = s_status.output_enabled ? s_status.current_target_mA : 0U;
+  uint32_t voltage_ramp_target;
+  uint32_t current_ramp_target;
+
+  if (s_status.output_enabled
+      && (HAL_GPIO_ReadPin(POWER_KILL_GPIO_Port, POWER_KILL_Pin)
+          == POWER_KILL_ASSERTED_LEVEL))
+  {
+    Control_SetOutputEnabled(false);
+  }
+
+  voltage_ramp_target = s_status.output_enabled ? s_status.voltage_target_mV : 0U;
+  current_ramp_target = s_status.output_enabled ? s_status.current_target_mA : 0U;
 
   s_status.voltage_applied_mV = control_ramp(s_status.voltage_applied_mV,
                                              voltage_ramp_target,

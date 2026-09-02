@@ -110,9 +110,9 @@ G4 should **not** ignore G0 and run its own thermistors unless they are extra DC
 
 ## G0 → G4 feedback (implement this first)
 
-G0 USART2 115200 8N1. Bring-up **stage 6** (current) speaks ASCII. Stage **0** speaks binary frames.
+G0 USART2 115200 8N1. Production firmware speaks ASCII `TLM` plus `SET` / `OUT`.
 
-### ASCII machine line (stage 6, every 200 ms)
+### ASCII machine line (every 200 ms)
 
 One line G4 must parse and **forward unchanged** to H7 or the PC:
 
@@ -134,40 +134,13 @@ TLM out=0 mode=1 vset=4000 vout=3990 iset=100 iout=0 vin=12000 t1=3250 t2=2510 t
 | cccv | 1 = CC (`STM_CC_CV` high, DS2 on) |
 | fault | `NONE` or console fault name |
 
-Human `STATUS` table still goes out once per second; **do not** scrape that. Use `TLM`.
-
-Host→G0 ASCII (CR/LF): `SET V=5.000 I=0.100`, `OUT ON`, `OUT OFF`, `STATUS`, `HELP`.
-
-### Binary (stage 0, every 20 ms)
-
-Frame: `A5 5A LEN TYPE SEQ PAYLOAD CRC16_LE`
-
-- LEN = TYPE+SEQ+PAYLOAD
-- CRC-16/CCITT-FALSE poly `0x1021` init `0xFFFF` over LEN..PAYLOAD
-- little-endian
-
-G4→G0: `0x01` SET_VOLTAGE u32 mV, `0x02` SET_CURRENT u32 mA, `0x03` SET_OUTPUT u8, `0x04` PING  
-G0→G4: `0x80` TELEMETRY, `0x81` ACK, `0x82` NACK
-
-TELEMETRY payload:
-
-1. 8× u32: vout_mV, iout_mA, vin_mV, dac_cv_mV, dac_cc_mV, vset_mV, iset_mA, vpre_mV
-2. 4× u8: mode, output, **bleed_request**, pgood
-3. u32 fault flags (0 for now)
-4. 4× u16 NTC ADC raw
-5. 4× u16 NTC ADC filtered
-6. 4× i16 NTC centi-degC (`INT16_MIN` invalid)
-7. u8 **fan_request_percent**
-8. u8 power_kill
-9. u8 cc_cv
-
-Until binary is brought up, stay on stage 6 `TLM` lines.
+Host→G0 ASCII (CR/LF): `SET V=5.000 I=0.100`, `OUT ON`, `OUT OFF`.
 
 ## G4 software loop (what to write)
 
 ```
 every UART byte from USART3:
-  reassemble TLM line (or binary frame)
+  reassemble TLM line
   copy line to USART1 (H7) and/or debug UART
 
 every TLM / telemetry:

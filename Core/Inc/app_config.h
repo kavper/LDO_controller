@@ -3,19 +3,6 @@
 
 #include "main.h"
 
-/*
- * Incremental board bring-up:
- *   1 - safe solid LED + UART heartbeat only
- *   2 - blinking LED + UART + internal ADC1/PGOOD diagnostics
- *   3 - MCP3464 verification + low-level DAC8562/readback test
- *   4 - continuous ADC diagnostics in physical units (power output stays off)
- *   5 - guarded 5 V / 100 mA power-stage test
- *   6 - interactive ASCII UART console with guarded output control
- *   0 - normal controller application
- *
- * Keep the active stage enabled until its hardware has been verified.
- */
-#define APP_BRINGUP_STAGE                   6U
 #define BOARD_LED_GPIO_PORT                 LED_G0_GPIO_Port
 #define BOARD_LED_PIN                       LED_G0_Pin
 
@@ -27,7 +14,7 @@
 
 /* Cooperative scheduler periods. */
 #define APP_CONTROL_PERIOD_MS              1U
-#define APP_TELEMETRY_PERIOD_MS            20U
+#define APP_TELEMETRY_PERIOD_MS            200U
 
 /* Conservative initial ramp values; tune after analog-loop validation. */
 #define CONTROL_VOLTAGE_RAMP_MV_PER_MS     50U
@@ -102,8 +89,7 @@
 /*
  * Board calibration. Gain values are expressed in ppm relative to the ideal
  * transfer function. VIN and VOUT were calibrated independently against an
- * external DMM at five points on 2026-07-23. IOUT remains provisional until
- * the missing U18 current-sense amplifier is populated.
+ * external DMM at five points on 2026-07-23.
  */
 #define MCP3464_VIN_GAIN_PPM                 1001323L
 #define MCP3464_VOUT_GAIN_PPM                1004656L
@@ -128,7 +114,6 @@
  * Analog measurement paths from the board schematic/BOM.
  * The assembled board has R87 fitted and R84 not fitted, giving current gain
  * x10. Never fit both: that would bypass the R69 current-sense shunt.
- * IOUT readings are invalid until the missing U18 amplifier is populated.
  */
 #define VOLTAGE_SENSE_INPUT_RESISTANCE_OHM   160000L
 #define VOLTAGE_SENSE_FEEDBACK_RESISTANCE_OHM 17400L
@@ -138,9 +123,8 @@
 #define CURRENT_LIMIT_AMPLIFIER_GAIN          11L
 
 /* Interactive console safety thresholds. */
-#define CONSOLE_STATUS_PERIOD_MS            1000U
 #define CONSOLE_TLM_PERIOD_MS                200U
-#define CONSOLE_MINIMUM_VIN_MV              6000U
+#define CONSOLE_MINIMUM_VIN_MV              4500U
 #define CONSOLE_MAXIMUM_TEMPERATURE_CENTI_C 6000L
 #define CONSOLE_VOUT_OVERSHOOT_MIN_MV       1500U
 #define CONSOLE_VOUT_OVERSHOOT_PERCENT         10U
@@ -154,24 +138,5 @@
 #define CONSOLE_VOUT_HARD_OV_CONFIRM_MS        10U
 #define CONSOLE_TEMPERATURE_CONFIRM_MS        500U
 #define CONSOLE_DAC_READBACK_CONFIRM_MS       300U
-
-/*
- * Stage-5 fixed first-power test. With R87 fitted, U17A produces -11 times
- * the shunt voltage for the analog CC loop. U18 is not involved in limiting;
- * it only provides the currently unavailable ADC current readback.
- */
-#define STAGE5_TARGET_VOUT_MV                5000U
-#define STAGE5_CURRENT_LIMIT_MA               100U
-#define STAGE5_CV_DAC_CODE                  11878U
-#define STAGE5_CC_DAC_CODE                   1201U
-#define STAGE5_EXPECTED_CV_READBACK_MV         544U
-#define STAGE5_EXPECTED_CC_READBACK_MV          55U
-#define STAGE5_DAC_READBACK_TOLERANCE_MV        15U
-#define STAGE5_PREFLIGHT_DELAY_MS             2000U
-/* Zero keeps the validated output enabled continuously until a fault/reset. */
-#define STAGE5_POWER_ON_TIME_MS                   0U
-#define STAGE5_VOUT_OVERVOLTAGE_MV             5500U
-#define STAGE5_MINIMUM_VIN_MV                  6000U
-#define STAGE5_MAXIMUM_TEMPERATURE_CENTI_C     6000L
 
 #endif /* APP_CONFIG_H */

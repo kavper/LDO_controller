@@ -44,30 +44,26 @@ static bool board_led_pgood_ok(void)
 
 static BoardLedPattern_t board_led_select_pattern(void)
 {
-#if APP_BRINGUP_STAGE == 6U
   const char *fault = UART_Console_GetFault();
+  const Control_Status_t *status;
+
   if ((fault != NULL) && (strcmp(fault, "NONE") != 0))
   {
     return BOARD_LED_PATTERN_FAULT;
   }
-#endif
 
   if (board_led_power_kill_asserted() || !board_led_pgood_ok())
   {
     return BOARD_LED_PATTERN_KILL;
   }
 
-#if (APP_BRINGUP_STAGE == 0U) || (APP_BRINGUP_STAGE == 6U)
+  status = Control_GetStatus();
+  if (status->output_enabled)
   {
-    const Control_Status_t *status = Control_GetStatus();
-    if (status->output_enabled)
-    {
-      return (status->mode == CONTROL_MODE_CC)
-               ? BOARD_LED_PATTERN_OUTPUT_CC
-               : BOARD_LED_PATTERN_OUTPUT_CV;
-    }
+    return (status->mode == CONTROL_MODE_CC)
+             ? BOARD_LED_PATTERN_OUTPUT_CC
+             : BOARD_LED_PATTERN_OUTPUT_CV;
   }
-#endif
 
   return BOARD_LED_PATTERN_HEARTBEAT;
 }
