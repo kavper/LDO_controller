@@ -59,11 +59,11 @@ Suggested local failsafe if G0 telemetry is older than 500 ms: hold last duty, o
 |---|---|---|
 | **PB4** | `BLEED_ON` | `bleed=1` → turn bleeder MOSFET on |
 | **PB5** | `REMOTE_ON` | not requested by G0 yet; leave off unless UI asks |
-| **PB6** | `POWER_PERMIT_G4` | Leave G0 `POWER_KILL` **high** (permit). Pull it **low** to kill. |
+| **PB6** | `POWER_PERMIT_G4` | Light the G0 opto so `POWER_KILL` goes **low** (permit). High/Hi-Z = analog kill. |
 
 - `BLEED_ON` high → Q13 N-FET on.
-- `STM_OUT_OFF` **high** → analog off.
-- `POWER_KILL` **low** = kill (`kill=1`). High (pull-up) = permit (`kill=0`).
+- `STM_OUT_OFF` **high** or `POWER_KILL` **high** → analog FETs off.
+- `POWER_KILL` **high** = kill (`kill=1`). G4 must pull it **low** for VOUT.
 - `STM_CC_CV` high = CC (DS2 on). G0 DS3 is active-low.
 
 ## What G0 measures and why G4 cares
@@ -128,7 +128,7 @@ TLM out=0 mode=1 vset=4000 vout=3990 iset=100 iout=0 vin=12000 t1=3250 t2=2510 t
 | bleed | 0/1 → G4 `BLEED_ON` |
 | fan | 0..100 → G4 `FAN_PWM` duty |
 | pgood | G0 5 V buck PGOOD |
-| kill | 1 = kill asserted (`POWER_KILL` **low**) |
+| kill | 1 = analog kill (`POWER_KILL` **high**; G4 not permitting) |
 | cccv | 1 = CC (`STM_CC_CV` high, DS2 on) |
 | fault | `NONE` or console fault name |
 
@@ -147,12 +147,11 @@ every TLM / telemetry:
   optionally log TACH RPM on debug UART
 
 POWER_PERMIT_G4:
-  keep G0 POWER_KILL **high** (permit)
-  pull POWER_KILL **low** = kill, independent of UART
+  pull G0 POWER_KILL **low** (permit / analog live)
+  release = POWER_KILL high = analog kill, independent of UART
 ```
 
-First smoke test: USB-UART on J6, 115200. You should see `TLM ...` at 5 Hz from G0.
-Idle pull-up → `kill=0`. `OUT ON` NACKs `POWER_KILL` only when the net is low.
+First smoke test: USB-UART on J6, 115200. Idle pull-up → `kill=1`. Bench without G4: jumper `POWER_KILL` to GND, then `SET` / `OUT ON`.
 
 ## Hardware gaps (do not fight the PCB)
 
