@@ -1,5 +1,7 @@
 # G4 firmware brief: LDO G0 link, fan, bleeder, H7/debug
 
+**UART command/telemetry contract (paste into the G4 chat):** [`docs/G4_G0_UART_PROTOCOL.md`](G4_G0_UART_PROTOCOL.md). That file is the source of truth for SET/OUT/TLM/ACK. This page is CubeMX pins, analog polarity, bleed/fan policy.
+
 For the **G4 / DCDC** CubeMX+firmware chat (`Digital_PSU_G474RCT`, new shared PCB dated 2026-08-30). G0 LDO firmware lives in `kavper/LDO_controller` branch `cursor/g0-hw-rev-cubemx-19b5`.
 
 Do **not** reuse the old G4 USART2 mapping (PB3/PB4). That board is gone.
@@ -152,7 +154,7 @@ G0 USART2 115200 8N1. Production firmware speaks ASCII `TLM` plus `SET` / `OUT`.
 One line G4 must parse and **forward unchanged** to H7 or the PC:
 
 ```
-TLM out=0 mode=1 vset=4000 vout=3990 iset=100 iout=0 vin=12000 t1=3250 t2=2510 t3=2600 t4=2800 bleed=1 fan=35 pgood=1 kill=0 cccv=0 fault=NONE
+TLM out=0 mode=1 vset=4000 vout=3990 iset=100 iout=0 vin=12000 t1=3250 t2=2510 t3=2600 t4=2800 bleed=1 fan=35 pgood=1 kill=0 outoff=0 cccv=0 fault=NONE
 ```
 
 | Token | Unit / meaning |

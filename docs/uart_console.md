@@ -27,7 +27,7 @@ Every 200 ms:
 TLM out=0 mode=0 vset=0 vout=8 iset=0 iout=0 vin=5980 t1=3475 t2=3571 t3=3484 t4=3161 bleed=0 fan=54 pgood=1 kill=1 cccv=0 fault=NONE
 ```
 
-See `docs/G4_LDO_UART.md`. G4 must copy `bleed` and `fan` to its GPIOs.
+Full G4 paste-spec: `docs/G4_G0_UART_PROTOCOL.md`. Pins/policy: `docs/G4_LDO_UART.md`. G4 must copy `bleed` and `fan` to its GPIOs.
 
 ## Protection (output forced OFF)
 
