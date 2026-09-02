@@ -129,6 +129,7 @@ TLM out=0 mode=1 vset=4000 vout=3990 iset=100 iout=0 vin=12000 t1=3250 t2=2510 t
 | fan | 0..100 → G4 `FAN_PWM` duty |
 | pgood | G0 5 V buck PGOOD |
 | kill | 1 = analog kill (`POWER_KILL` **high**; G4 not permitting) |
+| outoff | PA15 `STM_OUT_OFF` level (1 = high = analog off request) |
 | cccv | 1 = CC (`STM_CC_CV` high, DS2 on) |
 | fault | `NONE` or console fault name |
 

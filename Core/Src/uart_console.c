@@ -262,14 +262,14 @@ void UART_Console_QueueMachineTelemetry(void)
 {
   const Measurements_Data_t *data = Measurements_GetData();
   const Control_Status_t *control = Control_GetStatus();
-  char line[192];
+  char line[220];
   int written;
 
   written = snprintf(
       line, sizeof(line),
       "TLM out=%u mode=%u vset=%lu vout=%lu iset=%lu iout=%lu vin=%lu "
-      "t1=%ld t2=%ld t3=%ld t4=%ld bleed=%u fan=%u pgood=%u kill=%u cccv=%u "
-      "fault=%s\r\n",
+      "t1=%ld t2=%ld t3=%ld t4=%ld bleed=%u fan=%u pgood=%u kill=%u "
+      "outoff=%u cccv=%u fault=%s\r\n",
       control->output_enabled ? 1U : 0U,
       (unsigned int)control->mode,
       (unsigned long)control->voltage_target_mV,
@@ -287,6 +287,7 @@ void UART_Console_QueueMachineTelemetry(void)
                      == PGOOD_ASSERTED_LEVEL),
       (unsigned int)(HAL_GPIO_ReadPin(POWER_KILL_GPIO_Port, POWER_KILL_Pin)
                      == POWER_KILL_ASSERTED_LEVEL),
+      (unsigned int)HAL_GPIO_ReadPin(OUT_OFF_GPIO_Port, OUT_OFF_Pin),
       (unsigned int)(HAL_GPIO_ReadPin(CC_CV_STATE_GPIO_Port, CC_CV_STATE_Pin)
                      == CC_CV_STATE_CC_LEVEL),
       (s_fault != NULL) ? s_fault : "NONE");
