@@ -37,7 +37,8 @@ typedef enum
   UART_PROTOCOL_FAULT_VIN_LOW    = (1UL << 3),
   UART_PROTOCOL_FAULT_VOUT_HARD  = (1UL << 4),
   UART_PROTOCOL_FAULT_VOUT_HIGH  = (1UL << 5),
-  UART_PROTOCOL_FAULT_TEMP_HIGH  = (1UL << 6)
+  UART_PROTOCOL_FAULT_TEMP_HIGH  = (1UL << 6),
+  UART_PROTOCOL_FAULT_IOUT_HARD  = (1UL << 7)
 } UART_ProtocolFaultFlag_t;
 
 /*
@@ -51,7 +52,7 @@ typedef enum
  *                 DAC CC readback mV, voltage set mV, current set mA,
  *                 vpre_request_mV
  *   4 x uint8_t:  mode (0 OFF, 1 CV, 2 CC), output, bleed_request, pgood
- *   1 x uint32_t: fault flags (currently zero)
+ *   1 x uint32_t: fault flags
  *   4 x uint16_t: temperature ADC filtered
  *   4 x int16_t:  temperature centi-degC (T1 MOSFET, T2 ambient,
  *                 T3 bleeder, T4 PSU area). INT16_MIN = invalid

@@ -239,6 +239,16 @@ static const char *console_runtime_fault_condition(uint32_t now,
     *confirm_ms = CONSOLE_VOUT_OV_CONFIRM_MS;
     return "VOUT_HIGH";
   }
+  /*
+   * G0 owns the final-output current measurement and analogue CC loop.
+   * Reaching 5.5 A means that normal regulation failed: open OUT_OFF locally,
+   * then report a latched fault so G4 also removes DCDC power permit.
+   */
+  if (data->iout_mA >= CONSOLE_IOUT_EMERGENCY_MA)
+  {
+    *confirm_ms = CONSOLE_IOUT_EMERGENCY_CONFIRM_MS;
+    return "IOUT_HARD";
+  }
   if (!console_temperatures_safe(data))
   {
     *confirm_ms = CONSOLE_TEMPERATURE_CONFIRM_MS;
@@ -472,6 +482,8 @@ void UART_Console_Task(uint32_t now)
 
     Control_SetOutputEnabled(false);
     s_fault = fault;
+    /* Push the fault to G4 immediately instead of waiting for the 100 ms slot. */
+    UART_Protocol_QueueTelemetry();
     (void)snprintf(response, sizeof(response),
                    "NACK FAULT=%s; OUTPUT FORCED OFF\r\n", fault);
     (void)UART_Protocol_QueueText(response);

@@ -63,8 +63,11 @@ If telemetry is stale for more than 500 ms, G4 marks the link stale and uses
 40% fan failsafe. G4 never forwards binary G0 traffic to the host UART.
 
 Fault bits: bit 0 `HW_INIT`, 1 `PGOOD_LOST`, 2 `POWER_KILL`, 3 `VIN_LOW`,
-4 `VOUT_HARD`, 5 `VOUT_HIGH`, 6 `TEMP_HIGH`. G4 may recover from `VIN_LOW`
-without killing the pre-regulator; the other runtime faults force a hard stop.
+4 `VOUT_HARD`, 5 `VOUT_HIGH`, 6 `TEMP_HIGH`, 7 `IOUT_HARD`. `IOUT_HARD`
+is latched after the G0 final-output measurement reaches 5500 mA for 10 ms;
+G0 asserts its local `OUT_OFF` and immediately queues fault telemetry. G4 may
+recover from `VIN_LOW` without killing the pre-regulator; the other runtime
+faults remove power permit and force a hard stop of both G0 and the DCDC stage.
 
 ## Update and verification
 

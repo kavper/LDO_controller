@@ -128,6 +128,7 @@ static uint32_t uart_fault_flags(void)
   if (strcmp(fault, "VOUT_HARD") == 0) return UART_PROTOCOL_FAULT_VOUT_HARD;
   if (strcmp(fault, "VOUT_HIGH") == 0) return UART_PROTOCOL_FAULT_VOUT_HIGH;
   if (strcmp(fault, "TEMP_HIGH") == 0) return UART_PROTOCOL_FAULT_TEMP_HIGH;
+  if (strcmp(fault, "IOUT_HARD") == 0) return UART_PROTOCOL_FAULT_IOUT_HARD;
   return UART_PROTOCOL_FAULT_HW_INIT;
 }
 
