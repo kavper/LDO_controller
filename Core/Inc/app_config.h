@@ -26,7 +26,7 @@
 /* Preregulator request limits. TODO: confirm against the preregulator hardware. */
 #define VPRE_MIN_MV                        3000U
 #define VPRE_MAX_MV                        36000U
-#define VPRE_MARGIN_MV                     3000U
+#define VPRE_MARGIN_MV                     1500U
 
 /*
  * Bleeder request (G4 drives BLEED_ON; G0 has no GPIO on this revision).
