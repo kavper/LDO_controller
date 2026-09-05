@@ -3,21 +3,8 @@
 
 #include "main.h"
 
-/*
- * Incremental board bring-up:
- *   1 - safe solid LED + UART heartbeat only
- *   2 - blinking LED + UART + internal ADC1/PGOOD diagnostics
- *   3 - MCP3464 verification + low-level DAC8562/readback test
- *   4 - continuous ADC diagnostics in physical units (power output stays off)
- *   5 - guarded 5 V / 100 mA power-stage test
- *   6 - interactive ASCII UART console with guarded output control
- *   0 - normal controller application
- *
- * Keep the active stage enabled until its hardware has been verified.
- */
-#define APP_BRINGUP_STAGE                   6U
-#define BOARD_LED_GPIO_PORT                 GPIOB
-#define BOARD_LED_PIN                       GPIO_PIN_0
+#define BOARD_LED_GPIO_PORT                 LED_G0_GPIO_Port
+#define BOARD_LED_PIN                       LED_G0_Pin
 
 /* User-facing setpoint limits. */
 #define APP_VOLTAGE_MIN_MV                 0U
@@ -27,37 +14,53 @@
 
 /* Cooperative scheduler periods. */
 #define APP_CONTROL_PERIOD_MS              1U
-#define APP_TELEMETRY_PERIOD_MS            20U
+#define APP_TELEMETRY_PERIOD_MS            200U
 
 /* Conservative initial ramp values; tune after analog-loop validation. */
 #define CONTROL_VOLTAGE_RAMP_MV_PER_MS     50U
 #define CONTROL_CURRENT_RAMP_MA_PER_MS     10U
 #define CONTROL_MODE_FILTER_MS             10U
+/* Ignore brief POWER_KILL glitches on a load step into analog CC. */
+#define CONTROL_KILL_CONFIRM_MS            50U
 
 /* Preregulator request limits. TODO: confirm against the preregulator hardware. */
 #define VPRE_MIN_MV                        3000U
 #define VPRE_MAX_MV                        36000U
-#define VPRE_MARGIN_MV                     3000U
+#define VPRE_MARGIN_MV                     1500U
 
 /*
- * Bleeder control. During normal output operation it provides a minimum load
- * at low voltage, but is removed above 10 V to limit resistor dissipation.
- * When the output is disabled it is used independently to discharge VOUT.
+ * Bleeder request (G4 drives BLEED_ON; G0 has no GPIO on this revision).
+ * With the output enabled, bleed below a 4.000 V setpoint so the analog
+ * loops see a minimum load. Hysteresis avoids chatter around 4 V.
+ * With the output disabled the bleeder still discharges VOUT to ~0.2 V.
  */
-#define BLEEDER_RUN_ON_BELOW_MV            9500U
-#define BLEEDER_RUN_OFF_ABOVE_MV          10000U
+#define BLEEDER_RUN_ON_BELOW_MV            4000U
+#define BLEEDER_RUN_OFF_ABOVE_MV           4200U
 #define BLEEDER_ON_THRESHOLD_MV            500U
 #define BLEEDER_OFF_THRESHOLD_MV           200U
 #define BLEEDER_OFF_CONFIRM_MS             500U
 
-/* GPIO polarities are centralized here so board revisions need one change. */
+/*
+ * Fan duty request sent to G4 (G4 owns FAN_PWM / FAN_TACH). Linear between
+ * OFF and FULL using the hottest of MOSFET / bleeder / PSU-area NTCs.
+ */
+#define FAN_REQUEST_OFF_CENTI_C            3000
+#define FAN_REQUEST_FULL_CENTI_C           5500
+#define FAN_REQUEST_MIN_PERCENT            20U
+#define FAN_REQUEST_FAILSAFE_PERCENT       40U
+
+/*
+ * Analog OUT-OFF (G0 2026-08-30): D15/D16 diode-OR into U18.
+ * POWER_KILL or STM_OUT_OFF HIGH → analog FETs off.
+ * Idle pull-up on POWER_KILL is therefore kill. G4 POWER_PERMIT must
+ * turn the opto on and pull POWER_KILL LOW before OUT ON can produce VOUT.
+ */
 #define OUT_OFF_ASSERTED_LEVEL             GPIO_PIN_SET
 #define OUT_OFF_DEASSERTED_LEVEL           GPIO_PIN_RESET
-/* The optocoupler inverts STM_BLEED_ON, so the MCU-side control is active low. */
-#define BLEEDER_ENABLED_LEVEL              GPIO_PIN_RESET
-#define BLEEDER_DISABLED_LEVEL             GPIO_PIN_SET
+#define POWER_KILL_ASSERTED_LEVEL          GPIO_PIN_SET
+/* BLEED_ON is not connected to the MCU on this revision. */
 
-/* TODO: confirm the CC/CV comparator polarity on the final schematic. */
+/* STM_CC_CV is open-collector Q16 + 10 k pull-up; DS2 lights when the net is high. */
 #define CC_CV_STATE_CC_LEVEL               GPIO_PIN_SET
 #define PGOOD_ASSERTED_LEVEL               GPIO_PIN_SET
 
@@ -70,90 +73,56 @@
 #define MCP3464_EXTERNAL_VREF_MV            3000U
 
 /*
- * The four 10 kOhm NTC dividers are supplied from +3V3, while ADC1 VREF+
- * is the 3.000 V reference. RT1/RT2 are 103AT-2; R96/R99 are
- * NCP18XH103F03RB. Beta conversion is intended for board bring-up and can
- * later be replaced by per-sensor calibration or full resistance tables.
+ * NTC: 10 k pull-up to 3V_REFR, STM32 ADC1 VREF+ is +3V3R.
+ * RT1/RT2 103AT-2; T3/T4 10 k NTC.
  */
-#define TEMPERATURE_ADC_REFERENCE_MV        3000U
-#define TEMPERATURE_DIVIDER_SUPPLY_MV       3300U
+#define TEMPERATURE_ADC_REFERENCE_MV        3300U
+#define TEMPERATURE_DIVIDER_SUPPLY_MV       3000U
 #define TEMPERATURE_NTC_NOMINAL_OHM         10000U
 #define TEMPERATURE_NTC_NOMINAL_KELVIN_X100 29815U
 #define TEMPERATURE_NTC_BETA_103AT2_K       3435U
 #define TEMPERATURE_NTC_BETA_NCP18_K        3434U
 
-/*
- * Board calibration. Gain values are expressed in ppm relative to the ideal
- * transfer function. VIN and VOUT were calibrated independently against an
- * external DMM at five points on 2026-07-23. IOUT remains provisional until
- * the missing U18 current-sense amplifier is populated.
- */
-#define MCP3464_VIN_GAIN_PPM                 1001323L
-#define MCP3464_VOUT_GAIN_PPM                1004656L
-#define MCP3464_IOUT_GAIN_PPM                995896L
-#define MCP3464_DAC_CC_GAIN_PPM              998688L
-#define MCP3464_DAC_CV_GAIN_PPM              993103L
-#define MCP3464_VOUT_ZERO_RAW                (-12L)
-#define MCP3464_IOUT_ZERO_RAW                14L
-#define MCP3464_VIN_ZERO_RAW                 (-7L)
-#define MCP3464_DAC_CC_ZERO_RAW              (-3L)
-#define MCP3464_DAC_CV_ZERO_RAW              (-3L)
+/* Nominal MCP3464 scale (DMM calibration later). */
+#define MCP3464_VIN_GAIN_PPM                 1000000L
+#define MCP3464_VOUT_GAIN_PPM                1000000L
+#define MCP3464_IOUT_GAIN_PPM                1000000L
+#define MCP3464_DAC_CC_GAIN_PPM              1000000L
+#define MCP3464_DAC_CV_GAIN_PPM              1000000L
+#define MCP3464_VOUT_ZERO_RAW                0L
+#define MCP3464_IOUT_ZERO_RAW                0L
+#define MCP3464_VIN_ZERO_RAW                 0L
+#define MCP3464_DAC_CC_ZERO_RAW              0L
+#define MCP3464_DAC_CV_ZERO_RAW              0L
 
 /*
- * Complete CV output-path calibration against the same DMM:
- *   Vout = 0.990295342 * nominal_DAC_voltage + 8.231677 mV
- * Control_VoltageToDacRaw() applies the inverse transfer function.
+ * Analog front-end, G0 sheet 2026-08-30, no DMM trim.
+ * VOUT U34: DC gain 15k/180k. VIN U30: 15k/(180k+33k).
+ * IOUT INA241A1 gain 10, shunt R108 50 mOhm, ADC sees 3V_REFR - Vout.
+ * Analog CC I_MON U32A gain 10k/1k = 10.
  */
-#define CV_OUTPUT_GAIN_PPM                   990295L
-#define CV_OUTPUT_OFFSET_UV                  8232L
-
-/*
- * Analog measurement paths from the board schematic/BOM.
- * The assembled board has R87 fitted and R84 not fitted, giving current gain
- * x10. Never fit both: that would bypass the R69 current-sense shunt.
- * IOUT readings are invalid until the missing U18 amplifier is populated.
- */
-#define VOLTAGE_SENSE_INPUT_RESISTANCE_OHM   160000L
-#define VOLTAGE_SENSE_FEEDBACK_RESISTANCE_OHM 17400L
+#define VOUT_DIFFAMP_INPUT_OHM               180000L
+#define VOUT_DIFFAMP_FEEDBACK_OHM            15000L
+#define VIN_DIFFAMP_INPUT_OHM                213000L
+#define VIN_DIFFAMP_FEEDBACK_OHM             15000L
 #define CURRENT_SENSE_SHUNT_MILLIOHM         50L
 #define CURRENT_SENSE_AMPLIFIER_GAIN         10L
-/* U17A analog current-limit path: 1 + R72/R75 = 1 + 100k/10k = 11. */
-#define CURRENT_LIMIT_AMPLIFIER_GAIN          11L
+#define CURRENT_LIMIT_AMPLIFIER_GAIN         10L
 
 /* Interactive console safety thresholds. */
-#define CONSOLE_STATUS_PERIOD_MS            1000U
-#define CONSOLE_MINIMUM_VIN_MV              6000U
+#define CONSOLE_TLM_PERIOD_MS                100U
+#define CONSOLE_MINIMUM_VIN_MV              4500U
 #define CONSOLE_MAXIMUM_TEMPERATURE_CENTI_C 6000L
 #define CONSOLE_VOUT_OVERSHOOT_MIN_MV       1500U
 #define CONSOLE_VOUT_OVERSHOOT_PERCENT         10U
 #define CONSOLE_VOUT_HARD_OVERSHOOT_MIN_MV  3000U
 #define CONSOLE_VOUT_HARD_OVERSHOOT_PERCENT    20U
-#define CONSOLE_DAC_READBACK_TOLERANCE_MV     75U
-#define CONSOLE_DAC_SETTLE_MS                 750U
 #define CONSOLE_PGOOD_CONFIRM_MS               50U
 #define CONSOLE_VIN_CONFIRM_MS                250U
 #define CONSOLE_VOUT_OV_CONFIRM_MS            100U
 #define CONSOLE_VOUT_HARD_OV_CONFIRM_MS        10U
+#define CONSOLE_IOUT_EMERGENCY_MA             5500U
+#define CONSOLE_IOUT_EMERGENCY_CONFIRM_MS       10U
 #define CONSOLE_TEMPERATURE_CONFIRM_MS        500U
-#define CONSOLE_DAC_READBACK_CONFIRM_MS       300U
-
-/*
- * Stage-5 fixed first-power test. With R87 fitted, U17A produces -11 times
- * the shunt voltage for the analog CC loop. U18 is not involved in limiting;
- * it only provides the currently unavailable ADC current readback.
- */
-#define STAGE5_TARGET_VOUT_MV                5000U
-#define STAGE5_CURRENT_LIMIT_MA               100U
-#define STAGE5_CV_DAC_CODE                  11878U
-#define STAGE5_CC_DAC_CODE                   1201U
-#define STAGE5_EXPECTED_CV_READBACK_MV         544U
-#define STAGE5_EXPECTED_CC_READBACK_MV          55U
-#define STAGE5_DAC_READBACK_TOLERANCE_MV        15U
-#define STAGE5_PREFLIGHT_DELAY_MS             2000U
-/* Zero keeps the validated output enabled continuously until a fault/reset. */
-#define STAGE5_POWER_ON_TIME_MS                   0U
-#define STAGE5_VOUT_OVERVOLTAGE_MV             5500U
-#define STAGE5_MINIMUM_VIN_MV                  6000U
-#define STAGE5_MAXIMUM_TEMPERATURE_CENTI_C     6000L
 
 #endif /* APP_CONFIG_H */

@@ -1,7 +1,7 @@
-# Interactive UART console
+# G0 host UART
 
-Stage 6 provides a human-readable console on USART2 at 115200 baud, 8 data
-bits, no parity and one stop bit. End every command with CR, LF or CRLF.
+USART2, 115200 8N1, CR/LF. Production interface is `TLM` plus three commands.
+There is no STATUS table.
 
 ## Commands
 
@@ -9,63 +9,32 @@ bits, no parity and one stop bit. End every command with CR, LF or CRLF.
 SET V=5.000 I=0.100
 OUT ON
 OUT OFF
-STATUS
-HELP
 ```
 
-- `SET` accepts volts and amperes with up to three decimal places. It updates
-  the requested voltage and analog current limit but does not enable the output.
-  Its ACK explicitly reports `OUTPUT=OFF (SEND OUT ON)` when appropriate.
-- `OUT ON` enables the output only after the ADC/DAC, PGOOD, VIN, VOUT and
-  temperature preflight checks pass.
-- `OUT OFF` disables the power stage immediately; the DAC setpoints then ramp
-  down to zero and the bleeder discharges the output.
+- `SET` updates voltage and current-limit setpoints. Does not enable the output.
+  Analog CV holds `V=`; analog CC holds `I=`. `mode` / `cccv` only report which
+  loop is winning. Hitting the current limit does **not** turn the output off.
+- `OUT ON` enables `STM_OUT_OFF` only after PGOOD, POWER_KILL (must be **low**), VIN,
+  VOUT≈0 and temperature checks pass.
+- `OUT OFF` asserts analog off immediately; DAC ramps to zero; `bleed` requests
+  discharge if VOUT is still up.
 
-During normal output operation the bleeder supplies a minimum load below
-9.5 V. It is switched off above 10 V to limit resistor power and temperature;
-the 0.5 V hysteresis prevents rapid switching near the threshold. The `STATE`
-row reports the logical hardware request as `BLEED=ON` or `BLEED=OFF`.
-- `STATUS` prints the same engineering-unit table that is sent automatically
-  once per second.
-- Every valid command returns `ACK`; malformed, out-of-range or unsafe commands
-  return `NACK` with a reason.
+Aliases: `ON` / `OUTPUT ON` / `OUT=ON` and the OFF equivalents.
 
-Command matching is case-insensitive, ignores leading/trailing whitespace and
-collapses repeated spaces or tabs. `ON`, `OUTPUT ON` and `OUT=ON` are accepted
-aliases for `OUT ON`; equivalent aliases are available for OFF.
+## Telemetry
 
-The accepted ranges are 0.000 to 27.000 V and 0.000 to 5.000 A. The voltage
-limit reflects the 160 kOhm / 17.4 kOhm CV network and the 3.000 V DAC
-reference. Current-limit scaling uses the assembled R87 path, the 50 mOhm
-shunt and the U17A gain of 11.
+Every 200 ms:
 
-## Startup and protection
+```text
+TLM out=0 mode=0 vset=0 vout=8 iset=0 iout=0 vin=5980 t1=3475 t2=3571 t3=3484 t4=3161 bleed=0 fan=54 pgood=1 kill=1 cccv=0 fault=NONE
+```
 
-After every reset the output starts disabled and both DAC channels are zero.
-Setpoints are not retained across reset. While the output is enabled, the
-console forces it off on:
+Full G4 paste-spec: `docs/G4_G0_UART_PROTOCOL.md`. Pins/policy: `docs/G4_LDO_UART.md`. G4 must copy `bleed` and `fan` to its GPIOs.
 
-- ADC or DAC initialization failure
-- deasserted 5 V PGOOD for at least 50 ms
-- VIN below 6 V for at least 250 ms
-- any temperature at or above 60 C for at least 500 ms
-- VOUT above the request by at least 1.5 V (or 10%, whichever is greater)
-  for at least 100 ms
-- a severe VOUT excursion above the request by at least 3 V (or 20%,
-  whichever is greater) for at least 10 ms
-- DAC CV or CC readback error greater than 75 mV for at least 300 ms,
-  checked only after a 750 ms settling interval
+## Protection (output forced OFF)
 
-The confirmation times deliberately reject isolated samples and normal
-CC-to-CV recovery transients after a load is disconnected. They do not disable
-the protection for a sustained fault.
-
-During a commanded voltage reduction, the VOUT limits follow the ramped
-`applied` voltage instead of jumping immediately to the lower final target.
-For an upward change, the requested target remains the protection reference.
-This prevents a normal 10 V to 1 V transition from being reported as an
-overvoltage while keeping the limits active around the commanded trajectory.
-
-The `IOUT` field intentionally reports `N/A (no U18)`. The analog current-limit
-loop is active, but actual output-current telemetry cannot be trusted until U18
-is populated.
+POWER_KILL high (debounced), PGOOD lost, VIN low, overtemperature, VOUT
+overshoot above the CV setpoint. Current limit and DAC readback are **not**
+trips. `kill=1` means `POWER_KILL` is high (analog FETs held off).
+G4 must drive `POWER_PERMIT_G4` **PB6 high** (or jumper G0 PB1 to GND) before
+`OUT ON` can produce VOUT. See `docs/G4_LDO_UART.md`.

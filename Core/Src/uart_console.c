@@ -3,29 +3,22 @@
 #include "app_config.h"
 #include "bleeder.h"
 #include "control.h"
+#include "fan_request.h"
 #include "main.h"
 #include "measurements.h"
 #include "uart_protocol.h"
 
 #include <ctype.h>
-#include <stdarg.h>
 #include <stdio.h>
 #include <string.h>
 
 #define CONSOLE_LINE_SIZE 96U
-#define CONSOLE_TABLE_CONTENT_WIDTH 76U
 
 static bool s_mcp_ok;
 static bool s_dac_ok;
 static const char *s_fault;
-static uint32_t s_dac_settle_until;
 static const char *s_fault_candidate;
 static uint32_t s_fault_candidate_since;
-
-static uint32_t console_abs_difference(uint32_t first, uint32_t second)
-{
-  return (first >= second) ? (first - second) : (second - first);
-}
 
 static void console_skip_spaces(const char **cursor)
 {
@@ -47,7 +40,6 @@ static bool console_take_token(const char **cursor, const char *token)
   return true;
 }
 
-/* Parses a non-negative value with up to three decimals into milli-units. */
 static bool console_parse_milli(const char **cursor, uint32_t *value)
 {
   uint32_t whole = 0U;
@@ -92,29 +84,6 @@ static bool console_parse_milli(const char **cursor, uint32_t *value)
   return true;
 }
 
-static const char *console_mode_name(Control_Mode_t mode)
-{
-  switch (mode)
-  {
-    case CONTROL_MODE_CV:
-      return "CV";
-    case CONTROL_MODE_CC:
-      return "CC";
-    default:
-      return "OFF";
-  }
-}
-
-static uint32_t console_temperature_magnitude(int32_t centi_C)
-{
-  return (uint32_t)((centi_C < 0) ? -(int64_t)centi_C : (int64_t)centi_C);
-}
-
-static char console_temperature_sign(int32_t centi_C)
-{
-  return (centi_C < 0) ? '-' : '+';
-}
-
 static bool console_temperatures_safe(const Measurements_Data_t *data)
 {
   uint8_t index;
@@ -144,6 +113,11 @@ static const char *console_preflight_fault(void)
   {
     return "PGOOD_5V";
   }
+  if (HAL_GPIO_ReadPin(POWER_KILL_GPIO_Port, POWER_KILL_Pin)
+      == POWER_KILL_ASSERTED_LEVEL)
+  {
+    return "POWER_KILL";
+  }
   if (data->vin_mV < CONSOLE_MINIMUM_VIN_MV)
   {
     return "VIN_LOW";
@@ -156,6 +130,48 @@ static const char *console_preflight_fault(void)
   {
     return "TEMPERATURE";
   }
+  return NULL;
+}
+
+bool UART_Console_ApplySetpoint(uint32_t voltage_mV, uint32_t current_mA)
+{
+  if ((voltage_mV > APP_VOLTAGE_MAX_MV)
+      || (current_mA > APP_CURRENT_MAX_MA))
+  {
+    return false;
+  }
+
+  Control_SetVoltageTarget(voltage_mV);
+  Control_SetCurrentTarget(current_mA);
+  s_fault_candidate = NULL;
+  return true;
+}
+
+const char *UART_Console_SetOutput(bool enabled)
+{
+  const char *fault;
+
+  if (!enabled)
+  {
+    Control_SetOutputEnabled(false);
+    s_fault = "NONE";
+    s_fault_candidate = NULL;
+    return NULL;
+  }
+  if (Control_GetStatus()->output_enabled)
+  {
+    return NULL;
+  }
+
+  fault = console_preflight_fault();
+  if (fault != NULL)
+  {
+    return fault;
+  }
+
+  s_fault = "NONE";
+  s_fault_candidate = NULL;
+  Control_SetOutputEnabled(true);
   return NULL;
 }
 
@@ -178,8 +194,6 @@ static const char *console_runtime_fault_condition(uint32_t now,
   const Measurements_Data_t *data = Measurements_GetData();
   const Control_Status_t *control = Control_GetStatus();
   uint32_t voltage_protection_reference_mV;
-  uint32_t expected_cv_mV;
-  uint32_t expected_cc_mV;
 
   if (!s_mcp_ok || !s_dac_ok)
   {
@@ -192,19 +206,18 @@ static const char *console_runtime_fault_condition(uint32_t now,
     *confirm_ms = CONSOLE_PGOOD_CONFIRM_MS;
     return "PGOOD_LOST";
   }
+  if (HAL_GPIO_ReadPin(POWER_KILL_GPIO_Port, POWER_KILL_Pin)
+      == POWER_KILL_ASSERTED_LEVEL)
+  {
+    *confirm_ms = CONSOLE_PGOOD_CONFIRM_MS;
+    return "POWER_KILL";
+  }
   if (data->vin_mV < CONSOLE_MINIMUM_VIN_MV)
   {
     *confirm_ms = CONSOLE_VIN_CONFIRM_MS;
     return "VIN_LOW";
   }
 
-  /*
-   * On a downward setpoint change the DAC follows voltage_applied_mV at the
-   * configured slew rate. Comparing VOUT immediately with the lower final
-   * target would misclassify the intentional 10 V -> 1 V transition as an
-   * overvoltage. Use the higher of target and applied so protection follows
-   * the commanded trajectory in both ramp directions.
-   */
   voltage_protection_reference_mV = control->voltage_target_mV;
   if (control->voltage_applied_mV > voltage_protection_reference_mV)
   {
@@ -226,32 +239,26 @@ static const char *console_runtime_fault_condition(uint32_t now,
     *confirm_ms = CONSOLE_VOUT_OV_CONFIRM_MS;
     return "VOUT_HIGH";
   }
+  /*
+   * G0 owns the final-output current measurement and analogue CC loop.
+   * Reaching 5.5 A means that normal regulation failed: open OUT_OFF locally,
+   * then report a latched fault so G4 also removes DCDC power permit.
+   */
+  if (data->iout_mA >= CONSOLE_IOUT_EMERGENCY_MA)
+  {
+    *confirm_ms = CONSOLE_IOUT_EMERGENCY_CONFIRM_MS;
+    return "IOUT_HARD";
+  }
   if (!console_temperatures_safe(data))
   {
     *confirm_ms = CONSOLE_TEMPERATURE_CONFIRM_MS;
     return "TEMP_HIGH";
   }
-  if ((int32_t)(now - s_dac_settle_until) < 0)
-  {
-    return NULL;
-  }
-
-  expected_cv_mV = Control_DacRawToMillivolts(
-      Control_VoltageToDacRaw(control->voltage_applied_mV));
-  expected_cc_mV = Control_DacRawToMillivolts(
-      Control_CurrentToDacRaw(control->current_applied_mA));
-  if (console_abs_difference(data->dac_cv_readback_mV, expected_cv_mV)
-      > CONSOLE_DAC_READBACK_TOLERANCE_MV)
-  {
-    *confirm_ms = CONSOLE_DAC_READBACK_CONFIRM_MS;
-    return "DAC_CV_FB";
-  }
-  if (console_abs_difference(data->dac_cc_readback_mV, expected_cc_mV)
-      > CONSOLE_DAC_READBACK_TOLERANCE_MV)
-  {
-    *confirm_ms = CONSOLE_DAC_READBACK_CONFIRM_MS;
-    return "DAC_CC_FB";
-  }
+  (void)now;
+  /*
+   * Analog CC/CV loops hold Iset and Vset. DAC readback and STM_CC_CV are
+   * telemetry only — never force the output off because the supply limited.
+   */
   return NULL;
 }
 
@@ -279,181 +286,43 @@ static const char *console_runtime_fault(uint32_t now)
   return NULL;
 }
 
-static void console_queue_help(void)
-{
-  (void)UART_Protocol_QueueText(
-      "\r\nCommands (115200 8N1, end with ENTER):\r\n"
-      "  SET V=5.000 I=0.100  - set 5.000 V and 0.100 A limit\r\n"
-      "  OUT ON               - guarded output enable\r\n"
-      "  OUT OFF              - immediate output disable\r\n"
-      "  STATUS               - print table now\r\n"
-      "  HELP                 - print this help\r\n");
-}
-
-static bool console_append_rule(char *buffer, size_t capacity, size_t *used,
-                                char fill)
-{
-  size_t index;
-
-  if ((capacity - *used) < (CONSOLE_TABLE_CONTENT_WIDTH + 7U))
-  {
-    return false;
-  }
-  buffer[(*used)++] = '+';
-  for (index = 0U; index < (CONSOLE_TABLE_CONTENT_WIDTH + 2U); ++index)
-  {
-    buffer[(*used)++] = fill;
-  }
-  buffer[(*used)++] = '+';
-  buffer[(*used)++] = '\r';
-  buffer[(*used)++] = '\n';
-  buffer[*used] = '\0';
-  return true;
-}
-
-static bool console_append_row(char *buffer, size_t capacity, size_t *used,
-                               const char *format, ...)
-{
-  char content[160];
-  va_list arguments;
-  int content_length;
-  int written;
-
-  va_start(arguments, format);
-  content_length = vsnprintf(content, sizeof(content), format, arguments);
-  va_end(arguments);
-  if ((content_length < 0)
-      || (content_length > (int)CONSOLE_TABLE_CONTENT_WIDTH))
-  {
-    return false;
-  }
-
-  written = snprintf(buffer + *used, capacity - *used,
-                     "| %-*s |\r\n",
-                     (int)CONSOLE_TABLE_CONTENT_WIDTH, content);
-  if ((written < 0) || ((size_t)written >= (capacity - *used)))
-  {
-    return false;
-  }
-  *used += (size_t)written;
-  return true;
-}
-
-void UART_Console_QueueStatus(void)
+void UART_Console_QueueMachineTelemetry(void)
 {
   const Measurements_Data_t *data = Measurements_GetData();
   const Control_Status_t *control = Control_GetStatus();
-  uint32_t temperature[MEASUREMENTS_TEMPERATURE_COUNT];
-  uint16_t cv_code = Control_VoltageToDacRaw(control->voltage_applied_mV);
-  uint16_t cc_code = Control_CurrentToDacRaw(control->current_applied_mA);
-  static char report[1450];
-  size_t used = 0U;
-  uint8_t index;
-  bool ok = true;
+  char line[220];
+  int written;
 
-  for (index = 0U; index < MEASUREMENTS_TEMPERATURE_COUNT; ++index)
-  {
-    temperature[index] =
-        console_temperature_magnitude(data->temperature_centi_C[index]);
-  }
-
-  report[0] = '\0';
-  ok = console_append_rule(report, sizeof(report), &used, '=');
-  ok = ok && console_append_row(report, sizeof(report), &used,
-      "LDO CONTROLLER LIVE DEBUG");
-  ok = ok && console_append_row(report, sizeof(report), &used,
-      "STATE: OUT=%s  MODE=%s  BLEED=%s  PGOOD=%u  FAULT=%s",
-      control->output_enabled ? "ON" : "OFF",
-      console_mode_name(control->mode),
-      Bleeder_IsEnabled() ? "ON" : "OFF",
-      (unsigned int)(HAL_GPIO_ReadPin(PGOOD_5V_IN_GPIO_Port,
-                                     PGOOD_5V_IN_Pin)
+  written = snprintf(
+      line, sizeof(line),
+      "TLM out=%u mode=%u vset=%lu vout=%lu iset=%lu iout=%lu vin=%lu "
+      "t1=%ld t2=%ld t3=%ld t4=%ld bleed=%u fan=%u pgood=%u kill=%u "
+      "outoff=%u cccv=%u fault=%s\r\n",
+      control->output_enabled ? 1U : 0U,
+      (unsigned int)control->mode,
+      (unsigned long)control->voltage_target_mV,
+      (unsigned long)data->vout_mV,
+      (unsigned long)control->current_target_mA,
+      (unsigned long)data->iout_mA,
+      (unsigned long)data->vin_mV,
+      (long)data->temperature_centi_C[0],
+      (long)data->temperature_centi_C[1],
+      (long)data->temperature_centi_C[2],
+      (long)data->temperature_centi_C[3],
+      Bleeder_IsEnabled() ? 1U : 0U,
+      (unsigned int)FanRequest_Percent(),
+      (unsigned int)(HAL_GPIO_ReadPin(PGOOD_5V_IN_GPIO_Port, PGOOD_5V_IN_Pin)
                      == PGOOD_ASSERTED_LEVEL),
-      s_fault);
-  ok = ok && console_append_rule(report, sizeof(report), &used, '-');
-  ok = ok && console_append_row(report, sizeof(report), &used,
-      "CONTROL (requested / applied / DAC code / measured)");
-  ok = ok && console_append_row(report, sizeof(report), &used,
-      "Voltage: %lu.%03lu V / %lu.%03lu V / %05u / %lu.%03lu V",
-      (unsigned long)(control->voltage_target_mV / 1000U),
-      (unsigned long)(control->voltage_target_mV % 1000U),
-      (unsigned long)(control->voltage_applied_mV / 1000U),
-      (unsigned long)(control->voltage_applied_mV % 1000U),
-      (unsigned int)cv_code,
-      (unsigned long)(data->vout_mV / 1000U),
-      (unsigned long)(data->vout_mV % 1000U));
-  ok = ok && console_append_row(report, sizeof(report), &used,
-      "Current: %lu.%03lu A / %lu.%03lu A / %05u / N/A (U18 missing)",
-      (unsigned long)(control->current_target_mA / 1000U),
-      (unsigned long)(control->current_target_mA % 1000U),
-      (unsigned long)(control->current_applied_mA / 1000U),
-      (unsigned long)(control->current_applied_mA % 1000U),
-      (unsigned int)cc_code);
-  ok = ok && console_append_rule(report, sizeof(report), &used, '-');
-  ok = ok && console_append_row(report, sizeof(report), &used,
-      "MCP3464: VIN=%lu.%03lu V  DAC_CV=%lu.%03lu V  DAC_CC=%lu.%03lu V",
-      (unsigned long)(data->vin_mV / 1000U),
-      (unsigned long)(data->vin_mV % 1000U),
-      (unsigned long)(data->dac_cv_readback_mV / 1000U),
-      (unsigned long)(data->dac_cv_readback_mV % 1000U),
-      (unsigned long)(data->dac_cc_readback_mV / 1000U),
-      (unsigned long)(data->dac_cc_readback_mV % 1000U));
-  ok = ok && console_append_row(report, sizeof(report), &used,
-      "TEMP T1 MOS=%c%lu.%02lu C  T2 AMBIENT=%c%lu.%02lu C",
-      console_temperature_sign(data->temperature_centi_C[0]),
-      (unsigned long)(temperature[0] / 100U),
-      (unsigned long)(temperature[0] % 100U),
-      console_temperature_sign(data->temperature_centi_C[1]),
-      (unsigned long)(temperature[1] / 100U),
-      (unsigned long)(temperature[1] % 100U));
-  ok = ok && console_append_row(report, sizeof(report), &used,
-      "TEMP T3 BLEED=%c%lu.%02lu C  T4 POWER=%c%lu.%02lu C",
-      console_temperature_sign(data->temperature_centi_C[2]),
-      (unsigned long)(temperature[2] / 100U),
-      (unsigned long)(temperature[2] % 100U),
-      console_temperature_sign(data->temperature_centi_C[3]),
-      (unsigned long)(temperature[3] / 100U),
-      (unsigned long)(temperature[3] % 100U));
-  ok = ok && console_append_rule(report, sizeof(report), &used, '-');
-  ok = ok && console_append_row(report, sizeof(report), &used,
-      "RAW MCP: VIN=%ld  VOUT=%ld  IOUT=%ld",
-      (long)data->vin_diff_raw, (long)data->vout_diff_raw,
-      (long)data->iout_diff_raw);
-  ok = ok && console_append_row(report, sizeof(report), &used,
-      "RAW DAC FEEDBACK: CC=%ld  CV=%ld",
-      (long)data->dac_cc_readback_raw, (long)data->dac_cv_readback_raw);
-  ok = ok && console_append_row(report, sizeof(report), &used,
-      "RAW STM: T1=%u  T2=%u  T3=%u  T4=%u",
-      (unsigned int)data->temperature_filtered[0],
-      (unsigned int)data->temperature_filtered[1],
-      (unsigned int)data->temperature_filtered[2],
-      (unsigned int)data->temperature_filtered[3]);
-  ok = ok && console_append_rule(report, sizeof(report), &used, '=');
-
-  if (ok)
+      (unsigned int)(HAL_GPIO_ReadPin(POWER_KILL_GPIO_Port, POWER_KILL_Pin)
+                     == POWER_KILL_ASSERTED_LEVEL),
+      (unsigned int)HAL_GPIO_ReadPin(OUT_OFF_GPIO_Port, OUT_OFF_Pin),
+      (unsigned int)(HAL_GPIO_ReadPin(CC_CV_STATE_GPIO_Port, CC_CV_STATE_Pin)
+                     == CC_CV_STATE_CC_LEVEL),
+      (s_fault != NULL) ? s_fault : "NONE");
+  if ((written > 0) && ((size_t)written < sizeof(line)))
   {
-    (void)UART_Protocol_QueueText(report);
+    (void)UART_Protocol_QueueText(line);
   }
-}
-
-static void console_ack_set(uint32_t voltage_mV, uint32_t current_mA)
-{
-  const bool output_enabled = Control_GetStatus()->output_enabled;
-  char response[144];
-
-  (void)snprintf(
-      response, sizeof(response),
-      "ACK SET V=%lu.%03luV I=%lu.%03luA CV_CODE=%u CC_CODE=%u "
-      "OUTPUT=%s%s\r\n",
-      (unsigned long)(voltage_mV / 1000U),
-      (unsigned long)(voltage_mV % 1000U),
-      (unsigned long)(current_mA / 1000U),
-      (unsigned long)(current_mA % 1000U),
-      (unsigned int)Control_VoltageToDacRaw(voltage_mV),
-      (unsigned int)Control_CurrentToDacRaw(current_mA),
-      output_enabled ? "ON" : "OFF",
-      output_enabled ? "" : " (SEND OUT ON)");
-  (void)UART_Protocol_QueueText(response);
 }
 
 static bool console_parse_set(const char *line, uint32_t *voltage_mV,
@@ -522,23 +391,28 @@ static void console_handle_line(char *line, uint32_t now)
   uint32_t voltage_mV;
   uint32_t current_mA;
   const char *fault;
+
+  (void)now;
   console_normalize_line(line);
 
   if (console_parse_set(line, &voltage_mV, &current_mA))
   {
-    if ((voltage_mV > APP_VOLTAGE_MAX_MV)
-        || (current_mA > APP_CURRENT_MAX_MA))
+    char response[80];
+
+    if (!UART_Console_ApplySetpoint(voltage_mV, current_mA))
     {
       (void)UART_Protocol_QueueText(
           "NACK RANGE V=0.000..27.000V I=0.000..5.000A\r\n");
       return;
     }
-    Control_SetVoltageTarget(voltage_mV);
-    Control_SetCurrentTarget(current_mA);
-    s_dac_settle_until = now + CONSOLE_DAC_SETTLE_MS;
-    s_fault_candidate = NULL;
-    s_fault = "NONE";
-    console_ack_set(voltage_mV, current_mA);
+    (void)snprintf(response, sizeof(response),
+                   "ACK SET V=%lu.%03lu I=%lu.%03lu OUT=%s\r\n",
+                   (unsigned long)(voltage_mV / 1000U),
+                   (unsigned long)(voltage_mV % 1000U),
+                   (unsigned long)(current_mA / 1000U),
+                   (unsigned long)(current_mA % 1000U),
+                   Control_GetStatus()->output_enabled ? "ON" : "OFF");
+    (void)UART_Protocol_QueueText(response);
     return;
   }
 
@@ -547,12 +421,7 @@ static void console_handle_line(char *line, uint32_t now)
       || (strcmp(line, "OUT=ON") == 0)
       || (strcmp(line, "ON") == 0))
   {
-    if (Control_GetStatus()->output_enabled)
-    {
-      (void)UART_Protocol_QueueText("ACK OUT ON (ALREADY ON)\r\n");
-      return;
-    }
-    fault = console_preflight_fault();
+    fault = UART_Console_SetOutput(true);
     if (fault != NULL)
     {
       char response[72];
@@ -561,10 +430,6 @@ static void console_handle_line(char *line, uint32_t now)
       (void)UART_Protocol_QueueText(response);
       return;
     }
-    s_fault = "NONE";
-    s_dac_settle_until = now + CONSOLE_DAC_SETTLE_MS;
-    s_fault_candidate = NULL;
-    Control_SetOutputEnabled(true);
     (void)UART_Protocol_QueueText("ACK OUT ON\r\n");
     return;
   }
@@ -574,35 +439,17 @@ static void console_handle_line(char *line, uint32_t now)
       || (strcmp(line, "OUT=OFF") == 0)
       || (strcmp(line, "OFF") == 0))
   {
-    Control_SetOutputEnabled(false);
-    s_fault = "NONE";
-    s_fault_candidate = NULL;
+    (void)UART_Console_SetOutput(false);
     (void)UART_Protocol_QueueText("ACK OUT OFF\r\n");
     return;
   }
 
-  if (strcmp(line, "STATUS") == 0)
-  {
-    (void)UART_Protocol_QueueText("ACK STATUS\r\n");
-    UART_Console_QueueStatus();
-    return;
-  }
+  (void)UART_Protocol_QueueText("NACK UNKNOWN; USE SET V=.. I=.. | OUT ON | OUT OFF\r\n");
+}
 
-  if (strcmp(line, "HELP") == 0)
-  {
-    (void)UART_Protocol_QueueText("ACK HELP\r\n");
-    console_queue_help();
-    return;
-  }
-
-  {
-    char response[160];
-    (void)snprintf(
-        response, sizeof(response),
-        "NACK UNKNOWN CMD=\"%.80s\"; USE SET ... | OUT ON | OUT OFF | STATUS | HELP\r\n",
-        line);
-    (void)UART_Protocol_QueueText(response);
-  }
+const char *UART_Console_GetFault(void)
+{
+  return (s_fault != NULL) ? s_fault : "NONE";
 }
 
 void UART_Console_Init(bool mcp_ok, bool dac_ok)
@@ -610,10 +457,8 @@ void UART_Console_Init(bool mcp_ok, bool dac_ok)
   s_mcp_ok = mcp_ok;
   s_dac_ok = dac_ok;
   s_fault = "NONE";
-  s_dac_settle_until = 0U;
   s_fault_candidate = NULL;
   s_fault_candidate_since = 0U;
-  console_queue_help();
 }
 
 void UART_Console_Task(uint32_t now)
@@ -637,6 +482,8 @@ void UART_Console_Task(uint32_t now)
 
     Control_SetOutputEnabled(false);
     s_fault = fault;
+    /* Push the fault to G4 immediately instead of waiting for the 100 ms slot. */
+    UART_Protocol_QueueTelemetry();
     (void)snprintf(response, sizeof(response),
                    "NACK FAULT=%s; OUTPUT FORCED OFF\r\n", fault);
     (void)UART_Protocol_QueueText(response);

@@ -99,9 +99,9 @@ static uint32_t measurements_vout_raw_to_mV(int32_t raw)
   }
 
   numerator = (int64_t)calibrated * MCP3464_EXTERNAL_VREF_MV
-            * VOLTAGE_SENSE_INPUT_RESISTANCE_OHM;
+            * VOUT_DIFFAMP_INPUT_OHM;
   denominator = MCP3464_SIGNED_CODES
-              * VOLTAGE_SENSE_FEEDBACK_RESISTANCE_OHM;
+              * VOUT_DIFFAMP_FEEDBACK_OHM;
   return (uint32_t)((numerator + (denominator / 2LL)) / denominator);
 }
 
@@ -112,7 +112,11 @@ static uint32_t measurements_iout_raw_to_mA(int32_t raw)
   int64_t numerator;
   int64_t denominator;
 
-  if (calibrated <= 0)
+  if (calibrated < 0)
+  {
+    calibrated = -calibrated;
+  }
+  if (calibrated == 0)
   {
     return 0U;
   }
@@ -136,9 +140,9 @@ static uint32_t measurements_vin_raw_to_mV(int32_t raw)
   }
 
   numerator = (int64_t)calibrated * MCP3464_EXTERNAL_VREF_MV
-            * VOLTAGE_SENSE_INPUT_RESISTANCE_OHM;
+            * VIN_DIFFAMP_INPUT_OHM;
   denominator = MCP3464_SIGNED_CODES
-              * VOLTAGE_SENSE_FEEDBACK_RESISTANCE_OHM;
+              * VIN_DIFFAMP_FEEDBACK_OHM;
   return (uint32_t)((numerator + (denominator / 2LL)) / denominator);
 }
 
@@ -163,7 +167,7 @@ static HAL_StatusTypeDef measurements_select_mcp(McpMeasurement_t measurement)
 {
   switch (measurement)
   {
-    /* Differential: ADC_VOUT_P (CH0) - ADC_VOUT_N (CH1). */
+    /* Differential: ADC_VOUT_P (CH2) - ADC_VOUT_N (CH3). */
     case MCP_MEAS_VOUT_DIFF:
       return MCP3464_SelectDifferential(MCP3464_CHANNEL_VOUT_P,
                                         MCP3464_CHANNEL_VOUT_N);
@@ -178,11 +182,11 @@ static HAL_StatusTypeDef measurements_select_mcp(McpMeasurement_t measurement)
       return MCP3464_SelectDifferential(MCP3464_CHANNEL_VIN_P,
                                         MCP3464_CHANNEL_VIN_N);
 
-    /* Single-ended: ADC_DAC_CC (CH2) - AGND. */
+    /* Single-ended: ADC_DAC_CC (CH1) - AGND. */
     case MCP_MEAS_DAC_CC_SINGLE_ENDED:
       return MCP3464_SelectSingleEnded(MCP3464_CHANNEL_DAC_CC);
 
-    /* Single-ended: ADC_DAC_CV (CH3) - AGND. */
+    /* Single-ended: ADC_DAC_CV (CH0) - AGND. */
     case MCP_MEAS_DAC_CV_SINGLE_ENDED:
       return MCP3464_SelectSingleEnded(MCP3464_CHANNEL_DAC_CV);
 

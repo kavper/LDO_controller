@@ -3,7 +3,6 @@
 #include "app_config.h"
 #include "dac8562.h"
 #include "main.h"
-#include "measurements.h"
 #include "output_ctrl.h"
 
 #include <limits.h>
@@ -12,6 +11,7 @@ static Control_Status_t s_status;
 static Control_Mode_t s_filtered_mode;
 static GPIO_PinState s_mode_candidate;
 static uint8_t s_mode_stable_ms;
+static uint8_t s_kill_ms;
 static uint16_t s_last_cv_raw;
 static uint16_t s_last_cc_raw;
 
@@ -45,24 +45,19 @@ static uint32_t control_ramp(uint32_t actual, uint32_t target, uint32_t step)
 
 uint16_t Control_VoltageToDacRaw(uint32_t voltage_mV)
 {
-  int64_t desired_uV = (int64_t)voltage_mV * 1000LL;
-  int64_t corrected_uV;
   uint64_t numerator;
   uint64_t denominator;
 
-  if (desired_uV <= CV_OUTPUT_OFFSET_UV)
+  numerator = (uint64_t)voltage_mV
+            * (uint64_t)VOUT_DIFFAMP_FEEDBACK_OHM
+            * (uint64_t)UINT16_MAX;
+  denominator = (uint64_t)VOUT_DIFFAMP_INPUT_OHM
+              * (uint64_t)MCP3464_EXTERNAL_VREF_MV;
+
+  if (denominator == 0ULL)
   {
     return 0U;
   }
-
-  corrected_uV = ((desired_uV - CV_OUTPUT_OFFSET_UV) * 1000000LL
-                  + (CV_OUTPUT_GAIN_PPM / 2L))
-               / CV_OUTPUT_GAIN_PPM;
-  numerator = (uint64_t)corrected_uV
-            * VOLTAGE_SENSE_FEEDBACK_RESISTANCE_OHM * UINT16_MAX;
-  denominator = (uint64_t)VOLTAGE_SENSE_INPUT_RESISTANCE_OHM
-              * MCP3464_EXTERNAL_VREF_MV * 1000ULL;
-
   return (uint16_t)((numerator + (denominator / 2ULL)) / denominator);
 }
 
@@ -143,12 +138,13 @@ static void control_update_vpre_request(void)
   {
     request = VPRE_MIN_MV;
   }
-  else if (s_status.mode == CONTROL_MODE_CC)
-  {
-    request = Measurements_GetData()->vout_mV + VPRE_MARGIN_MV;
-  }
   else
   {
+    /*
+     * Keep VIN headroom at Vset + dropout in CV and CC. Tracking VOUT down
+     * in current limit collapses the preregulator and looks like a trip.
+     * Analog CC already holds Iset; firmware must not fold the source.
+     */
     request = s_status.voltage_applied_mV + VPRE_MARGIN_MV;
   }
 
@@ -173,6 +169,7 @@ void Control_Init(void)
   s_filtered_mode = CONTROL_MODE_CV;
   s_mode_candidate = HAL_GPIO_ReadPin(CC_CV_STATE_GPIO_Port, CC_CV_STATE_Pin);
   s_mode_stable_ms = 0U;
+  s_kill_ms = 0U;
   s_last_cv_raw = UINT16_MAX;
   s_last_cc_raw = UINT16_MAX;
 
@@ -182,8 +179,29 @@ void Control_Init(void)
 
 void Control_Task1ms(void)
 {
-  uint32_t voltage_ramp_target = s_status.output_enabled ? s_status.voltage_target_mV : 0U;
-  uint32_t current_ramp_target = s_status.output_enabled ? s_status.current_target_mA : 0U;
+  uint32_t voltage_ramp_target;
+  uint32_t current_ramp_target;
+
+  if (s_status.output_enabled
+      && (HAL_GPIO_ReadPin(POWER_KILL_GPIO_Port, POWER_KILL_Pin)
+          == POWER_KILL_ASSERTED_LEVEL))
+  {
+    if (s_kill_ms < CONTROL_KILL_CONFIRM_MS)
+    {
+      ++s_kill_ms;
+    }
+    if (s_kill_ms >= CONTROL_KILL_CONFIRM_MS)
+    {
+      Control_SetOutputEnabled(false);
+    }
+  }
+  else
+  {
+    s_kill_ms = 0U;
+  }
+
+  voltage_ramp_target = s_status.output_enabled ? s_status.voltage_target_mV : 0U;
+  current_ramp_target = s_status.output_enabled ? s_status.current_target_mA : 0U;
 
   s_status.voltage_applied_mV = control_ramp(s_status.voltage_applied_mV,
                                              voltage_ramp_target,

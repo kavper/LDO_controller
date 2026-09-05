@@ -1,4 +1,20 @@
-# MCP3464 and DAC8562 stage-3 calibration
+# MCP3464 / DAC8562
+
+DMM numbers below are from the **previous** board (2026-07-23). The 2026-08-30
+G0 analog uses different amps and MCP3464 channel order. Firmware now uses
+nominal schematic gains in `app_config.h`; a new DMM cal comes later.
+
+| Path | Hardware | Nominal |
+|---|---|---|
+| VOUT | U34 15 k / 180 k | ×12 |
+| VIN | U30 15 k / (180 k + 33 k) | ×14.2 |
+| IOUT | INA241A1 ×10, R108 50 mΩ | 0.5 V/A at ADC |
+| CC analog | U32A 10 k / 1 k | ×10 vs shunt |
+| MCP CH0/1 | DAC CV / CC | 1:1 vs 3V_REFR |
+| NTC | 10 k to 3V_REFR, ADC VREF+ = 3V3R | |
+
+# Legacy calibration (old PCB)
+
 
 ## Data set
 

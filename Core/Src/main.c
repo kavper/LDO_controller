@@ -19,10 +19,7 @@
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
 #include "adc.h"
-#include "dac.h"
-#include "i2c.h"
 #include "spi.h"
-#include "tim.h"
 #include "usart.h"
 #include "gpio.h"
 
@@ -94,14 +91,9 @@ int main(void)
   /* Initialize all configured peripherals */
   MX_GPIO_Init();
   MX_ADC1_Init();
-  MX_DAC1_Init();
-  MX_I2C2_Init();
   MX_SPI1_Init();
   MX_SPI2_Init();
-  MX_TIM1_Init();
-  MX_TIM3_Init();
   MX_USART2_UART_Init();
-  MX_TIM15_Init();
   /* USER CODE BEGIN 2 */
   APP_Init();
 

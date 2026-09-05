@@ -47,8 +47,10 @@ target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     # Add user sources here
     Core/Src/app.c
     Core/Src/bleeder.c
+    Core/Src/board_led.c
     Core/Src/control.c
     Core/Src/dac8562.c
+    Core/Src/fan_request.c
     Core/Src/mcp3464.c
     Core/Src/measurements.c
     Core/Src/output_ctrl.c
