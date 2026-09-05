@@ -110,7 +110,7 @@
 #define CURRENT_LIMIT_AMPLIFIER_GAIN         10L
 
 /* Interactive console safety thresholds. */
-#define CONSOLE_TLM_PERIOD_MS                200U
+#define CONSOLE_TLM_PERIOD_MS                100U
 #define CONSOLE_MINIMUM_VIN_MV              4500U
 #define CONSOLE_MAXIMUM_TEMPERATURE_CENTI_C 6000L
 #define CONSOLE_VOUT_OVERSHOOT_MIN_MV       1500U

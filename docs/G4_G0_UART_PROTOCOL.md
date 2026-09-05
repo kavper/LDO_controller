@@ -1,10 +1,15 @@
-# G4 ↔ G0 UART protocol (paste this into the G4 firmware chat)
+# OBSOLETE: G4 ↔ G0 ASCII UART protocol v1
+
+> Do not implement this version. Production firmware now uses binary v2 with
+> CRC, sequence matching and atomic setpoints. See
+> [`G4_G0_UART_PROTOCOL_V2.md`](G4_G0_UART_PROTOCOL_V2.md). This file remains
+> only as historical bring-up documentation.
 
 This is the **production** interface on the shared PCB (2026-08-30).
 G0 firmware: `kavper/LDO_controller` branch `cursor/g0-hw-rev-cubemx-19b5`.
 G4 repo: `kavper/Digital_PSU_G474RCT`.
 
-**Implement ASCII only.** Do not send binary frames (`A5 5A …`). Binary still exists in G0 source but is **not** enabled (`UART_Protocol_InitText`).
+The instructions below describe the retired ASCII implementation.
 
 Do **not** invent a second protocol for H7 or the PC: parse TLM for local GPIO, then **forward the same ASCII line unchanged**.
 

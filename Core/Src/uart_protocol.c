@@ -6,6 +6,7 @@
 #include "fan_request.h"
 #include "main.h"
 #include "measurements.h"
+#include "uart_console.h"
 #include "usart.h"
 
 #include <limits.h>
@@ -112,6 +113,24 @@ static uint32_t uart_get_u32_le(const uint8_t *buffer)
        | ((uint32_t)buffer[3] << 24);
 }
 
+static uint32_t uart_fault_flags(void)
+{
+  const char *fault = UART_Console_GetFault();
+
+  if ((fault == NULL) || (strcmp(fault, "NONE") == 0))
+  {
+    return 0U;
+  }
+  if (strcmp(fault, "HW_INIT") == 0) return UART_PROTOCOL_FAULT_HW_INIT;
+  if (strcmp(fault, "PGOOD_LOST") == 0) return UART_PROTOCOL_FAULT_PGOOD_LOST;
+  if (strcmp(fault, "POWER_KILL") == 0) return UART_PROTOCOL_FAULT_POWER_KILL;
+  if (strcmp(fault, "VIN_LOW") == 0) return UART_PROTOCOL_FAULT_VIN_LOW;
+  if (strcmp(fault, "VOUT_HARD") == 0) return UART_PROTOCOL_FAULT_VOUT_HARD;
+  if (strcmp(fault, "VOUT_HIGH") == 0) return UART_PROTOCOL_FAULT_VOUT_HIGH;
+  if (strcmp(fault, "TEMP_HIGH") == 0) return UART_PROTOCOL_FAULT_TEMP_HIGH;
+  return UART_PROTOCOL_FAULT_HW_INIT;
+}
+
 static bool uart_queue_frame(uint8_t type, uint8_t sequence,
                              const uint8_t *payload, uint8_t payload_length)
 {
@@ -177,8 +196,15 @@ static void uart_dispatch_frame(void)
         uart_queue_nack(sequence, type, UART_PROTOCOL_NACK_BAD_PAYLOAD);
         break;
       }
-      Control_SetVoltageTarget(uart_get_u32_le(payload));
-      uart_queue_ack(sequence, type);
+      if (!UART_Console_ApplySetpoint(uart_get_u32_le(payload),
+                                     Control_GetStatus()->current_target_mA))
+      {
+        uart_queue_nack(sequence, type, UART_PROTOCOL_NACK_RANGE);
+      }
+      else
+      {
+        uart_queue_ack(sequence, type);
+      }
       break;
 
     case UART_PROTOCOL_SET_CURRENT:
@@ -187,8 +213,15 @@ static void uart_dispatch_frame(void)
         uart_queue_nack(sequence, type, UART_PROTOCOL_NACK_BAD_PAYLOAD);
         break;
       }
-      Control_SetCurrentTarget(uart_get_u32_le(payload));
-      uart_queue_ack(sequence, type);
+      if (!UART_Console_ApplySetpoint(Control_GetStatus()->voltage_target_mV,
+                                     uart_get_u32_le(payload)))
+      {
+        uart_queue_nack(sequence, type, UART_PROTOCOL_NACK_RANGE);
+      }
+      else
+      {
+        uart_queue_ack(sequence, type);
+      }
       break;
 
     case UART_PROTOCOL_SET_OUTPUT:
@@ -197,8 +230,14 @@ static void uart_dispatch_frame(void)
         uart_queue_nack(sequence, type, UART_PROTOCOL_NACK_BAD_PAYLOAD);
         break;
       }
-      Control_SetOutputEnabled(payload[0] != 0U);
-      uart_queue_ack(sequence, type);
+      if (UART_Console_SetOutput(payload[0] != 0U) != NULL)
+      {
+        uart_queue_nack(sequence, type, UART_PROTOCOL_NACK_UNSAFE);
+      }
+      else
+      {
+        uart_queue_ack(sequence, type);
+      }
       break;
 
     case UART_PROTOCOL_PING:
@@ -208,6 +247,23 @@ static void uart_dispatch_frame(void)
         break;
       }
       uart_queue_ack(sequence, type);
+      break;
+
+    case UART_PROTOCOL_SETPOINT:
+      if (payload_length != 8U)
+      {
+        uart_queue_nack(sequence, type, UART_PROTOCOL_NACK_BAD_PAYLOAD);
+        break;
+      }
+      if (!UART_Console_ApplySetpoint(uart_get_u32_le(&payload[0]),
+                                     uart_get_u32_le(&payload[4])))
+      {
+        uart_queue_nack(sequence, type, UART_PROTOCOL_NACK_RANGE);
+      }
+      else
+      {
+        uart_queue_ack(sequence, type);
+      }
       break;
 
     default:
@@ -395,7 +451,7 @@ void UART_Protocol_QueueTelemetry(void)
   payload[index++] = Bleeder_IsEnabled() ? 1U : 0U;
   payload[index++] = (HAL_GPIO_ReadPin(PGOOD_5V_IN_GPIO_Port, PGOOD_5V_IN_Pin)
                       == PGOOD_ASSERTED_LEVEL) ? 1U : 0U;
-  uart_put_u32_le(payload, &index, 0U); /* Fault flags placeholder. */
+  uart_put_u32_le(payload, &index, uart_fault_flags());
 
   for (temperature = 0U; temperature < MEASUREMENTS_TEMPERATURE_COUNT; ++temperature)
   {
@@ -424,6 +480,8 @@ void UART_Protocol_QueueTelemetry(void)
                       == POWER_KILL_ASSERTED_LEVEL) ? 1U : 0U;
   payload[index++] = (HAL_GPIO_ReadPin(CC_CV_STATE_GPIO_Port, CC_CV_STATE_Pin)
                       == CC_CV_STATE_CC_LEVEL) ? 1U : 0U;
+  payload[index++] = (HAL_GPIO_ReadPin(OUT_OFF_GPIO_Port, OUT_OFF_Pin)
+                      == OUT_OFF_ASSERTED_LEVEL) ? 1U : 0U;
 
   (void)uart_queue_frame(UART_PROTOCOL_TELEMETRY, s_telemetry_sequence++, payload,
                          (uint8_t)index);

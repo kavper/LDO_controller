@@ -133,6 +133,48 @@ static const char *console_preflight_fault(void)
   return NULL;
 }
 
+bool UART_Console_ApplySetpoint(uint32_t voltage_mV, uint32_t current_mA)
+{
+  if ((voltage_mV > APP_VOLTAGE_MAX_MV)
+      || (current_mA > APP_CURRENT_MAX_MA))
+  {
+    return false;
+  }
+
+  Control_SetVoltageTarget(voltage_mV);
+  Control_SetCurrentTarget(current_mA);
+  s_fault_candidate = NULL;
+  return true;
+}
+
+const char *UART_Console_SetOutput(bool enabled)
+{
+  const char *fault;
+
+  if (!enabled)
+  {
+    Control_SetOutputEnabled(false);
+    s_fault = "NONE";
+    s_fault_candidate = NULL;
+    return NULL;
+  }
+  if (Control_GetStatus()->output_enabled)
+  {
+    return NULL;
+  }
+
+  fault = console_preflight_fault();
+  if (fault != NULL)
+  {
+    return fault;
+  }
+
+  s_fault = "NONE";
+  s_fault_candidate = NULL;
+  Control_SetOutputEnabled(true);
+  return NULL;
+}
+
 static uint32_t console_vout_limit_mV(uint32_t target_mV,
                                       uint32_t minimum_margin_mV,
                                       uint32_t margin_percent)
@@ -347,17 +389,12 @@ static void console_handle_line(char *line, uint32_t now)
   {
     char response[80];
 
-    if ((voltage_mV > APP_VOLTAGE_MAX_MV)
-        || (current_mA > APP_CURRENT_MAX_MA))
+    if (!UART_Console_ApplySetpoint(voltage_mV, current_mA))
     {
       (void)UART_Protocol_QueueText(
           "NACK RANGE V=0.000..27.000V I=0.000..5.000A\r\n");
       return;
     }
-    Control_SetVoltageTarget(voltage_mV);
-    Control_SetCurrentTarget(current_mA);
-    s_fault_candidate = NULL;
-    s_fault = "NONE";
     (void)snprintf(response, sizeof(response),
                    "ACK SET V=%lu.%03lu I=%lu.%03lu OUT=%s\r\n",
                    (unsigned long)(voltage_mV / 1000U),
@@ -374,12 +411,7 @@ static void console_handle_line(char *line, uint32_t now)
       || (strcmp(line, "OUT=ON") == 0)
       || (strcmp(line, "ON") == 0))
   {
-    if (Control_GetStatus()->output_enabled)
-    {
-      (void)UART_Protocol_QueueText("ACK OUT ON\r\n");
-      return;
-    }
-    fault = console_preflight_fault();
+    fault = UART_Console_SetOutput(true);
     if (fault != NULL)
     {
       char response[72];
@@ -388,9 +420,6 @@ static void console_handle_line(char *line, uint32_t now)
       (void)UART_Protocol_QueueText(response);
       return;
     }
-    s_fault = "NONE";
-    s_fault_candidate = NULL;
-    Control_SetOutputEnabled(true);
     (void)UART_Protocol_QueueText("ACK OUT ON\r\n");
     return;
   }
@@ -400,9 +429,7 @@ static void console_handle_line(char *line, uint32_t now)
       || (strcmp(line, "OUT=OFF") == 0)
       || (strcmp(line, "OFF") == 0))
   {
-    Control_SetOutputEnabled(false);
-    s_fault = "NONE";
-    s_fault_candidate = NULL;
+    (void)UART_Console_SetOutput(false);
     (void)UART_Protocol_QueueText("ACK OUT OFF\r\n");
     return;
   }

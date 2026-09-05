@@ -74,7 +74,7 @@ void APP_Init(void)
   BoardLed_Init();
   app_init_converters();
   Control_Init();
-  UART_Protocol_InitText(&huart2);
+  UART_Protocol_Init(&huart2);
   UART_Console_Init(s_mcp_ok, s_dac_ok);
 
   now = HAL_GetTick();
@@ -111,7 +111,7 @@ void APP_Task(void)
   if ((uint32_t)(now - s_tlm_tick) >= CONSOLE_TLM_PERIOD_MS)
   {
     s_tlm_tick = now;
-    UART_Console_QueueMachineTelemetry();
+    UART_Protocol_QueueTelemetry();
   }
   UART_Protocol_Task();
 }
