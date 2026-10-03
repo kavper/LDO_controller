@@ -60,12 +60,19 @@ typedef enum
  *
  * bleed_request is what G4 must drive on BLEED_ON (G0 has no bleed GPIO).
  * fan_request_percent is what G4 must apply to FAN_PWM.
+ *
+ * USART2 is 460800 8N1. RX is circular DMA; the parser runs in the task.
+ * A consistent telemetry snapshot is published every 5 ms (latest-wins).
+ * Fault telemetry is a separate safety frame and is not replaced by the
+ * next snapshot. The same command SEQ returns the stored ACK/NACK and
+ * does not apply the command again.
  */
 
 void UART_Protocol_Init(UART_HandleTypeDef *huart);
 void UART_Protocol_InitText(UART_HandleTypeDef *huart);
 void UART_Protocol_Task(void);
 void UART_Protocol_QueueTelemetry(void);
+void UART_Protocol_QueueFaultTelemetry(void);
 bool UART_Protocol_QueueText(const char *text);
 bool UART_Protocol_ReadLine(char *line, size_t capacity);
 

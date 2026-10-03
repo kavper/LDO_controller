@@ -482,8 +482,8 @@ void UART_Console_Task(uint32_t now)
 
     Control_SetOutputEnabled(false);
     s_fault = fault;
-    /* Push the fault to G4 immediately instead of waiting for the 100 ms slot. */
-    UART_Protocol_QueueTelemetry();
+    /* Safety frame now. The 5 ms snapshot must not replace this one. */
+    UART_Protocol_QueueFaultTelemetry();
     (void)snprintf(response, sizeof(response),
                    "NACK FAULT=%s; OUTPUT FORCED OFF\r\n", fault);
     (void)UART_Protocol_QueueText(response);
