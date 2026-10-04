@@ -141,7 +141,7 @@ Do **not** re-implement a different curve on G4 unless the G0 flag is missing.
 
 - power `0 W` → 0 %, `150 W` → 100 %, flat above that
 - temperature `25.00 °C` → 0 %, `60.00 °C` → 100 %, flat outside that
-- every NTC invalid → that axis is 40 %, then still max()'d with power
+- every NTC invalid, or the MOSFET NTC invalid → that axis is at least 40 %, then still max()'d with power and with any hotter remaining sensor
 
 G4 should **not** ignore G0 and run its own thermistors unless they are extra DCDC sensors; LDO heat is on G0. G4 inverts the PWM because Q9 is an open-collector inverter, and it reports tach RPM itself.
 

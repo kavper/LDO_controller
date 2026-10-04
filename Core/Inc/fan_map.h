@@ -10,12 +10,13 @@
  * Temperature: temp_off_centi (25.00 °C) → 0 %, temp_full_centi (60.00 °C) → 100 %.
  * Centi-degrees are °C×100, the unit stored by the G0 NTCs.
  * A missing temperature uses failsafe_percent on that axis only, so a
- * real power reading can still push the fan harder.
+ * real power reading can still push the fan harder. A missing MOSFET NTC
+ * (critical_missing) does the same even when another sensor is still cold.
  */
 static inline uint8_t FanMap_Percent(uint32_t power_mw, int32_t temp_centi_c,
-                                     bool temp_valid, uint32_t power_full_mw,
-                                     int32_t temp_off_centi, int32_t temp_full_centi,
-                                     uint8_t failsafe_percent)
+                                     bool temp_valid, bool critical_missing,
+                                     uint32_t power_full_mw, int32_t temp_off_centi,
+                                     int32_t temp_full_centi, uint8_t failsafe_percent)
 {
   uint32_t power_pct = 0U;
   uint32_t temp_pct;
@@ -61,6 +62,10 @@ static inline uint8_t FanMap_Percent(uint32_t power_mw, int32_t temp_centi_c,
   if (temp_pct > 100U)
   {
     temp_pct = 100U;
+  }
+  if (critical_missing && (temp_pct < failsafe_percent))
+  {
+    temp_pct = failsafe_percent;
   }
 
   return (uint8_t)((power_pct > temp_pct) ? power_pct : temp_pct);

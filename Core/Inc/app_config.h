@@ -51,7 +51,8 @@
  * Fan duty request sent to G4 (G4 owns FAN_PWM / FAN_TACH).
  * Duty is the higher of two lines: 0..150 W → 0..100 %, and
  * 25.00..60.00 °C → 0..100 % on the hottest real NTC.
- * A missing temperature uses the failsafe on that axis only.
+ * Every NTC missing, or the MOSFET NTC missing, uses the failsafe on
+ * that axis. A hotter remaining sensor or real power can still go higher.
  */
 #define FAN_MAP_POWER_FULL_MW              150000U
 #define FAN_MAP_TEMP_OFF_CENTI_C           2500

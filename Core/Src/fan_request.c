@@ -41,10 +41,14 @@ static uint32_t fan_power_mw(void)
 
 uint8_t FanRequest_Percent(void)
 {
+  const Measurements_Data_t *data = Measurements_GetData();
   bool temp_valid = false;
+  bool mosfet_missing;
   int32_t hottest = fan_hottest_centi_C(&temp_valid);
 
-  return FanMap_Percent(fan_power_mw(), hottest, temp_valid,
+  mosfet_missing =
+      (data->temperature_centi_C[MEASUREMENTS_TEMP_MOSFET] == INT32_MIN);
+  return FanMap_Percent(fan_power_mw(), hottest, temp_valid, mosfet_missing,
                         FAN_MAP_POWER_FULL_MW,
                         FAN_MAP_TEMP_OFF_CENTI_C,
                         FAN_MAP_TEMP_FULL_CENTI_C,
