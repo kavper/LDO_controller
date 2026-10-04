@@ -53,19 +53,29 @@ typedef enum
  *                 vpre_request_mV
  *   4 x uint8_t:  mode (0 OFF, 1 CV, 2 CC), output, bleed_request, pgood
  *   1 x uint32_t: fault flags
- *   4 x uint16_t: temperature ADC filtered
- *   4 x int16_t:  temperature centi-degC (T1 MOSFET, T2 ambient,
- *                 T3 bleeder, T4 PSU area). INT16_MIN = invalid
- *   4 x uint8_t:  fan_request_percent 0..100, power_kill, cc_cv, out_off
+ *   4 x uint16_t: temperature ADC raw, offset 40
+ *   4 x uint16_t: temperature ADC filtered, offset 48
+ *   4 x int16_t:  temperature, offset 56 (T1 MOSFET, T2 ambient,
+ *                 T3 bleeder, T4 PSU area). °C x 10 (253 = 25.3 °C).
+ *                 INT16_MIN = invalid
+ *   4 x uint8_t:  fan_request_percent 0..100 at offset 64, power_kill,
+ *                 cc_cv, out_off
  *
  * bleed_request is what G4 must drive on BLEED_ON (G0 has no bleed GPIO).
  * fan_request_percent is what G4 must apply to FAN_PWM.
+ *
+ * USART2 is 460800 8N1. RX is circular DMA; the parser runs in the task.
+ * A consistent telemetry snapshot is published every 5 ms (latest-wins).
+ * Fault telemetry is a separate safety frame and is not replaced by the
+ * next snapshot. The same command SEQ returns the stored ACK/NACK and
+ * does not apply the command again.
  */
 
 void UART_Protocol_Init(UART_HandleTypeDef *huart);
 void UART_Protocol_InitText(UART_HandleTypeDef *huart);
 void UART_Protocol_Task(void);
 void UART_Protocol_QueueTelemetry(void);
+void UART_Protocol_QueueFaultTelemetry(void);
 bool UART_Protocol_QueueText(const char *text);
 bool UART_Protocol_ReadLine(char *line, size_t capacity);
 

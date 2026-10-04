@@ -109,8 +109,10 @@
 #define CURRENT_SENSE_AMPLIFIER_GAIN         10L
 #define CURRENT_LIMIT_AMPLIFIER_GAIN         10L
 
-/* Interactive console safety thresholds. */
-#define CONSOLE_TLM_PERIOD_MS                100U
+/* Interactive console safety thresholds.
+ * Telemetry is one consistent snapshot every 5 ms. A late task does not
+ * emit the missed periods. */
+#define CONSOLE_TLM_PERIOD_MS                  5U
 #define CONSOLE_MINIMUM_VIN_MV              4500U
 #define CONSOLE_MAXIMUM_TEMPERATURE_CENTI_C 6000L
 #define CONSOLE_VOUT_OVERSHOOT_MIN_MV       1500U

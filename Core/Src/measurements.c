@@ -321,8 +321,16 @@ static void measurements_temperature_task(void)
 
 void Measurements_Init(void)
 {
+  uint8_t temperature;
+
   memset(&s_data, 0, sizeof(s_data));
   memset(s_temperature_filter_valid, 0, sizeof(s_temperature_filter_valid));
+  /* 0 would be a real 0.00 °C. Unconverted channels stay invalid. */
+  for (temperature = 0U; temperature < MEASUREMENTS_TEMPERATURE_COUNT;
+       ++temperature)
+  {
+    s_data.temperature_centi_C[temperature] = INT32_MIN;
+  }
   s_temperature_index = 0U;
   s_temperature_conversion_active = false;
   s_mcp_measurement = MCP_MEAS_VOUT_DIFF;
