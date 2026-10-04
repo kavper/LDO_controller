@@ -126,12 +126,11 @@ G0 also reports VIN, VOUT, IOUT, DAC readbacks, CC/CV, PGOOD, POWER_KILL.
 
 G0 **cannot** toggle `BLEED_ON`. It sets `bleed` in telemetry. G4 copies that bit to PB4.
 
-Rules now in G0 (`bleeder.c`):
+Rules now in G0 (`bleeder.c`), from measured Vout:
 
-- Output **ON** and **setpoint** `< 4.000 V` → bleed ON (minimum load).
-- Output **ON** and setpoint `≥ 4.200 V` → bleed OFF (0.2 V hysteresis).
-- Output **OFF** and VOUT `> 0.500 V` → bleed ON (discharge).
-- Output **OFF** and VOUT `< 0.200 V` for 500 ms → bleed OFF.
+- Vout `< 4.000 V` → bleed ON, whether or not the output is enabled.
+- Output **OFF** → bleed ON at any Vout, so a rail still above 4 V discharges and then stays loaded below 4 V.
+- Output **ON** and Vout `≥ 4.200 V` → bleed OFF. Between 4.000 V and 4.200 V the previous state is kept.
 
 Do **not** re-implement a different curve on G4 unless the G0 flag is missing.
 
