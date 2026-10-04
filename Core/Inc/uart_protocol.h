@@ -62,7 +62,8 @@ typedef enum
  *                 cc_cv, out_off
  *
  * bleed_request is what G4 must drive on BLEED_ON (G0 has no bleed GPIO).
- * fan_request_percent is what G4 must apply to FAN_PWM.
+ * fan_request_percent is the higher of the output-power and NTC maps.
+ * G4 applies it to FAN_PWM (the transistor inverts the pin).
  *
  * USART2 is 460800 8N1. RX is circular DMA; the parser runs in the task.
  * A consistent telemetry snapshot is published every 5 ms (latest-wins).

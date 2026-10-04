@@ -48,12 +48,12 @@ On G474 **PB14/PB15 = USART3 AF7**, not USART2.
 
 ### Fan (G4 only)
 
-- **PA6** `FAN_PWM` (TIM PWM, transistor Q9)
-- **PA5** `FAN_TACH` (input capture)
+- **PA7** `FAN_PWM` (TIM17, transistor Q9 inverts the pin; PA6 is NC)
+- **PA5** `FAN_TACH` (TIM2 input, two falling edges per revolution)
 
-Duty comes from G0 field `fan` (0..100 %). Apply it to FAN_PWM. TACH is local to G4 (stall detect); G0 does not have tach.
+Duty comes from G0 field `fan` (0..100 %). G4 applies it to FAN_PWM with the inversion above. Tach RPM is measured on G4 and sent to H7 on the slow AUX frame. G0 has no tach pin.
 
-Suggested local failsafe if G0 telemetry is older than 500 ms: hold last duty, or 40 % failsafe, never 0 % if MOSFETs were recently hot.
+If G0 telemetry is older than 500 ms, G4 forces 40 %. A cold, unloaded supply is allowed to request 0 %.
 
 ### Actuators G4 must drive (not on G0 MCU)
 
@@ -114,8 +114,8 @@ NTC on G0 ADC1 (centi-degC in telemetry, `t1`…`t4`):
 
 | Field | Sensor | Fan? |
 |---|---|---|
-| t1 | MOSFET | yes (hottest of t1/t3/t4) |
-| t2 | ambient | advisory (+5 °C vs hottest) |
+| t1 | MOSFET | yes, hottest of the four |
+| t2 | ambient | yes, same map, no offset |
 | t3 | bleeder resistor | yes |
 | t4 | 3V3 / 15-to-5 area | yes |
 
@@ -135,17 +135,15 @@ Rules now in G0 (`bleeder.c`), from measured Vout:
 
 Do **not** re-implement a different curve on G4 unless the G0 flag is missing.
 
-## Fan policy (G0 computes percent, G4 PWMs PA6)
+## Fan policy (G0 computes percent, G4 PWMs PA7)
 
-`fan` is 0..100. Curve on G0 (`fan_request.c`):
+`fan` is 0..100. G0 (`fan_request.c`) takes the higher of two lines, from measured Vout×Iout and from the hottest valid NTC (MOSFET, ambient, bleeder, PSU area):
 
-- hottest of MOSFET / bleeder / PSU NTC
-- `≤ 30.00 °C` → 20 % (keep spinning)
-- `30.00 … 55.00 °C` → linear 20…100 %
-- `≥ 55.00 °C` → 100 %
-- no valid NTC → 40 % failsafe
+- power `0 W` → 0 %, `150 W` → 100 %, flat above that
+- temperature `25.00 °C` → 0 %, `60.00 °C` → 100 %, flat outside that
+- every NTC invalid → that axis is 40 %, then still max()'d with power
 
-G4 should **not** ignore G0 and run its own thermistors unless they are extra DCDC sensors; LDO heat is on G0.
+G4 should **not** ignore G0 and run its own thermistors unless they are extra DCDC sensors; LDO heat is on G0. G4 inverts the PWM because Q9 is an open-collector inverter, and it reports tach RPM itself.
 
 ## G0 → G4 feedback (implement this first)
 

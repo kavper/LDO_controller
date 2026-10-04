@@ -3,7 +3,7 @@
 
 #include <stdint.h>
 
-/* 0..100 percent duty that G4 should apply to FAN_PWM. */
+/* 0..100 percent. Higher of the 0..150 W and 25..60 °C maps. */
 uint8_t FanRequest_Percent(void);
 
 #endif /* FAN_REQUEST_H */
