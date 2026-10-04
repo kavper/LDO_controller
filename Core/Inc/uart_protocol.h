@@ -38,7 +38,8 @@ typedef enum
   UART_PROTOCOL_FAULT_VOUT_HARD  = (1UL << 4),
   UART_PROTOCOL_FAULT_VOUT_HIGH  = (1UL << 5),
   UART_PROTOCOL_FAULT_TEMP_HIGH  = (1UL << 6),
-  UART_PROTOCOL_FAULT_IOUT_HARD  = (1UL << 7)
+  UART_PROTOCOL_FAULT_IOUT_HARD  = (1UL << 7),
+  UART_PROTOCOL_FAULT_MEAS_LOST  = (1UL << 8)
 } UART_ProtocolFaultFlag_t;
 
 /*
@@ -67,6 +68,10 @@ typedef enum
  *
  * USART2 is 460800 8N1. RX is circular DMA; the parser runs in the task.
  * A consistent telemetry snapshot is published every 5 ms (latest-wins).
+ * Fault bit 8 (MEAS_LOST) means the MCP3464 or NTC samples in that frame
+ * are older than the measurement-cycle timeout. vout, iout and vin are
+ * then sent as 0 and the temperatures as INT16_MIN. A new UART frame does
+ * not make those samples fresh.
  * Fault telemetry is a separate safety frame and is not replaced by the
  * next snapshot. The same command SEQ returns the stored ACK/NACK and
  * does not apply the command again.

@@ -108,6 +108,10 @@ static const char *console_preflight_fault(void)
   {
     return "ADC_OR_DAC_INIT";
   }
+  if (!Measurements_CriticalFresh())
+  {
+    return "MEAS_LOST";
+  }
   if (HAL_GPIO_ReadPin(PGOOD_5V_IN_GPIO_Port, PGOOD_5V_IN_Pin)
       != PGOOD_ASSERTED_LEVEL)
   {
@@ -199,6 +203,11 @@ static const char *console_runtime_fault_condition(uint32_t now,
   {
     *confirm_ms = 0U;
     return "HW_INIT";
+  }
+  if (!Measurements_CriticalFresh())
+  {
+    *confirm_ms = 0U;
+    return "MEAS_LOST";
   }
   if (HAL_GPIO_ReadPin(PGOOD_5V_IN_GPIO_Port, PGOOD_5V_IN_Pin)
       != PGOOD_ASSERTED_LEVEL)

@@ -1,6 +1,7 @@
 #ifndef MEASUREMENTS_H
 #define MEASUREMENTS_H
 
+#include <stdbool.h>
 #include <stdint.h>
 
 #define MEASUREMENTS_TEMPERATURE_COUNT 4U
@@ -43,6 +44,7 @@ typedef struct
 
 void Measurements_Init(void);
 void Measurements_Task(void);
+bool Measurements_CriticalFresh(void);
 const Measurements_Data_t *Measurements_GetData(void);
 int32_t Measurements_McpRawToMicrovolts(int32_t raw);
 

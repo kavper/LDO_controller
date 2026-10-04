@@ -143,20 +143,29 @@ static uint32_t uart_get_u32_le(const uint8_t *buffer)
 static uint32_t uart_fault_flags(void)
 {
   const char *fault = UART_Console_GetFault();
+  uint32_t flags = 0U;
+
+  /* The UART frame is sent on its own 5 ms tick. This bit is the only
+   * statement that the MCP3464 and NTC samples inside it are still live. */
+  if (!Measurements_CriticalFresh())
+  {
+    flags |= UART_PROTOCOL_FAULT_MEAS_LOST;
+  }
 
   if ((fault == NULL) || (strcmp(fault, "NONE") == 0))
   {
-    return 0U;
+    return flags;
   }
-  if (strcmp(fault, "HW_INIT") == 0) return UART_PROTOCOL_FAULT_HW_INIT;
-  if (strcmp(fault, "PGOOD_LOST") == 0) return UART_PROTOCOL_FAULT_PGOOD_LOST;
-  if (strcmp(fault, "POWER_KILL") == 0) return UART_PROTOCOL_FAULT_POWER_KILL;
-  if (strcmp(fault, "VIN_LOW") == 0) return UART_PROTOCOL_FAULT_VIN_LOW;
-  if (strcmp(fault, "VOUT_HARD") == 0) return UART_PROTOCOL_FAULT_VOUT_HARD;
-  if (strcmp(fault, "VOUT_HIGH") == 0) return UART_PROTOCOL_FAULT_VOUT_HIGH;
-  if (strcmp(fault, "TEMP_HIGH") == 0) return UART_PROTOCOL_FAULT_TEMP_HIGH;
-  if (strcmp(fault, "IOUT_HARD") == 0) return UART_PROTOCOL_FAULT_IOUT_HARD;
-  return UART_PROTOCOL_FAULT_HW_INIT;
+  if (strcmp(fault, "HW_INIT") == 0) return flags | UART_PROTOCOL_FAULT_HW_INIT;
+  if (strcmp(fault, "PGOOD_LOST") == 0) return flags | UART_PROTOCOL_FAULT_PGOOD_LOST;
+  if (strcmp(fault, "POWER_KILL") == 0) return flags | UART_PROTOCOL_FAULT_POWER_KILL;
+  if (strcmp(fault, "VIN_LOW") == 0) return flags | UART_PROTOCOL_FAULT_VIN_LOW;
+  if (strcmp(fault, "VOUT_HARD") == 0) return flags | UART_PROTOCOL_FAULT_VOUT_HARD;
+  if (strcmp(fault, "VOUT_HIGH") == 0) return flags | UART_PROTOCOL_FAULT_VOUT_HIGH;
+  if (strcmp(fault, "TEMP_HIGH") == 0) return flags | UART_PROTOCOL_FAULT_TEMP_HIGH;
+  if (strcmp(fault, "IOUT_HARD") == 0) return flags | UART_PROTOCOL_FAULT_IOUT_HARD;
+  if (strcmp(fault, "MEAS_LOST") == 0) return flags | UART_PROTOCOL_FAULT_MEAS_LOST;
+  return flags | UART_PROTOCOL_FAULT_HW_INIT;
 }
 
 static bool uart_fifo_push(uint8_t queue[][UART_FRAME_MAX], uint16_t *lengths,
@@ -637,9 +646,18 @@ static uint8_t uart_fill_telemetry(uint8_t *payload)
   uint8_t temperature;
   int16_t deci;
 
-  uart_put_u32_le(payload, &index, measurements->vout_mV);
-  uart_put_u32_le(payload, &index, measurements->iout_mA);
-  uart_put_u32_le(payload, &index, measurements->vin_mV);
+  if (Measurements_CriticalFresh())
+  {
+    uart_put_u32_le(payload, &index, measurements->vout_mV);
+    uart_put_u32_le(payload, &index, measurements->iout_mA);
+    uart_put_u32_le(payload, &index, measurements->vin_mV);
+  }
+  else
+  {
+    uart_put_u32_le(payload, &index, 0U);
+    uart_put_u32_le(payload, &index, 0U);
+    uart_put_u32_le(payload, &index, 0U);
+  }
   uart_put_u32_le(payload, &index, measurements->dac_cv_readback_mV);
   uart_put_u32_le(payload, &index, measurements->dac_cc_readback_mV);
   uart_put_u32_le(payload, &index, control->voltage_target_mV);
@@ -662,7 +680,9 @@ static uint8_t uart_fill_telemetry(uint8_t *payload)
   }
   for (temperature = 0U; temperature < MEASUREMENTS_TEMPERATURE_COUNT; ++temperature)
   {
-    deci = uart_temperature_deci_c(measurements->temperature_centi_C[temperature]);
+    deci = Measurements_CriticalFresh()
+               ? uart_temperature_deci_c(measurements->temperature_centi_C[temperature])
+               : INT16_MIN;
     uart_put_i16_le(payload, &index, deci);
   }
   payload[index++] = FanRequest_Percent();
