@@ -69,7 +69,7 @@ typedef enum
  * USART2 is 460800 8N1. RX is circular DMA; the parser runs in the task.
  * A consistent telemetry snapshot is published every 5 ms (latest-wins).
  * Fault bit 8 (MEAS_LOST) means the MCP3464 or NTC samples in that frame
- * are older than the measurement-cycle timeout. vout, iout and vin are
+ * are older than the 50 ms measurement freshness limit. vout, iout and vin are
  * then sent as 0 and the temperatures as INT16_MIN. A new UART frame does
  * not make those samples fresh.
  * Fault telemetry is a separate safety frame and is not replaced by the

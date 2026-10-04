@@ -6,6 +6,7 @@
 #include "fan_request.h"
 #include "main.h"
 #include "measurements.h"
+#include "ntc_temp.h"
 #include "uart_protocol.h"
 
 #include <ctype.h>
@@ -86,18 +87,13 @@ static bool console_parse_milli(const char **cursor, uint32_t *value)
 
 static bool console_temperatures_safe(const Measurements_Data_t *data)
 {
-  uint8_t index;
-
-  for (index = 0U; index < MEASUREMENTS_TEMPERATURE_COUNT; ++index)
+  if (data == NULL)
   {
-    if ((data->temperature_centi_C[index] == INT32_MIN)
-        || (data->temperature_centi_C[index]
-            >= CONSOLE_MAXIMUM_TEMPERATURE_CENTI_C))
-    {
-      return false;
-    }
+    return false;
   }
-  return true;
+  return Ntc_ReadingsSafe(data->temperature_centi_C,
+                          MEASUREMENTS_TEMPERATURE_COUNT,
+                          CONSOLE_MAXIMUM_TEMPERATURE_CENTI_C);
 }
 
 static const char *console_preflight_fault(void)

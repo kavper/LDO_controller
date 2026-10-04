@@ -44,13 +44,6 @@ static uint32_t s_ntc_stamp[MEASUREMENTS_TEMPERATURE_COUNT];
 static bool s_ntc_have[MEASUREMENTS_TEMPERATURE_COUNT];
 static bool s_temperature_filter_valid[MEASUREMENTS_TEMPERATURE_COUNT];
 
-static int32_t measurements_temperature_raw_to_centi_C(uint16_t raw,
-                                                        uint32_t beta_K)
-{
-  return Ntc_CentiC(raw, TEMPERATURE_ADC_REFERENCE_MV,
-                    TEMPERATURE_DIVIDER_SUPPLY_MV, beta_K);
-}
-
 static int32_t measurements_apply_calibration(int32_t raw, int32_t zero_raw,
                                               int32_t gain_ppm)
 {
@@ -249,7 +242,6 @@ static void measurements_temperature_task(void)
 {
   ADC_ChannelConfTypeDef config = {0};
   uint16_t raw;
-  int32_t filtered;
 
   if (!s_temperature_conversion_active)
   {
@@ -274,24 +266,21 @@ static void measurements_temperature_task(void)
   s_temperature_conversion_active = false;
   s_data.temperature_raw[s_temperature_index] = raw;
 
-  if (!s_temperature_filter_valid[s_temperature_index])
   {
-    s_data.temperature_filtered[s_temperature_index] = raw;
-    s_temperature_filter_valid[s_temperature_index] = true;
-  }
-  else
-  {
-    filtered = (int32_t)s_data.temperature_filtered[s_temperature_index];
-    filtered += ((int32_t)raw - filtered) / 8; /* IIR alpha = 1/8. */
-    s_data.temperature_filtered[s_temperature_index] = (uint16_t)filtered;
-  }
+    NtcChannel sample;
 
-  s_data.temperature_centi_C[s_temperature_index] =
-      measurements_temperature_raw_to_centi_C(
-          s_data.temperature_filtered[s_temperature_index],
-          (s_temperature_index <= MEASUREMENTS_TEMP_AMBIENT)
-              ? TEMPERATURE_NTC_BETA_103AT2_K
-              : TEMPERATURE_NTC_BETA_NCP18_K);
+    sample.filtered = s_data.temperature_filtered[s_temperature_index];
+    sample.valid = s_temperature_filter_valid[s_temperature_index];
+    sample.centi_c = s_data.temperature_centi_C[s_temperature_index];
+    Ntc_ChannelApply(&sample, raw, TEMPERATURE_ADC_REFERENCE_MV,
+                     TEMPERATURE_DIVIDER_SUPPLY_MV,
+                     (s_temperature_index <= MEASUREMENTS_TEMP_AMBIENT)
+                         ? TEMPERATURE_NTC_BETA_103AT2_K
+                         : TEMPERATURE_NTC_BETA_NCP18_K);
+    s_data.temperature_filtered[s_temperature_index] = sample.filtered;
+    s_temperature_filter_valid[s_temperature_index] = sample.valid;
+    s_data.temperature_centi_C[s_temperature_index] = sample.centi_c;
+  }
   s_ntc_have[s_temperature_index] = true;
   s_ntc_stamp[s_temperature_index] = HAL_GetTick();
 

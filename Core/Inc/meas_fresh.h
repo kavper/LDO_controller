@@ -8,8 +8,9 @@
  * MCP3464: internal 4.9152 MHz, prescale 1, OSR 256.
  * DMCLK = 1.2288 MHz, one conversion is 208 µs. Five channels and one
  * discarded conversion after every MUX change make a full cycle about
- * 2.1 ms. 50 ms is about twenty-four of those cycles, longer than one
- * 10 ms SPI timeout, and far inside the 500 ms UART stale window.
+ * 2.1 ms. The measurement freshness limit is 50 ms: about twenty-four
+ * of those cycles, longer than one 10 ms SPI timeout, and far inside
+ * the 500 ms UART stale window.
  * A new telemetry frame does not refresh this age.
  */
 #define MEAS_MCP_STALE_MS                50U
