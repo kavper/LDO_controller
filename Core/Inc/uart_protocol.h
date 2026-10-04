@@ -53,10 +53,12 @@ typedef enum
  *                 vpre_request_mV
  *   4 x uint8_t:  mode (0 OFF, 1 CV, 2 CC), output, bleed_request, pgood
  *   1 x uint32_t: fault flags
- *   4 x uint16_t: temperature ADC filtered
- *   4 x int16_t:  temperature centi-degC (T1 MOSFET, T2 ambient,
- *                 T3 bleeder, T4 PSU area). INT16_MIN = invalid
- *   4 x uint8_t:  fan_request_percent 0..100, power_kill, cc_cv, out_off
+ *   4 x uint16_t: temperature ADC raw, offset 40
+ *   4 x uint16_t: temperature ADC filtered, offset 48
+ *   4 x int16_t:  temperature centi-degC, offset 56 (T1 MOSFET, T2 ambient,
+ *                 T3 bleeder, T4 PSU area). °C x 100. INT16_MIN = invalid
+ *   4 x uint8_t:  fan_request_percent 0..100 at offset 64, power_kill,
+ *                 cc_cv, out_off
  *
  * bleed_request is what G4 must drive on BLEED_ON (G0 has no bleed GPIO).
  * fan_request_percent is what G4 must apply to FAN_PWM.
