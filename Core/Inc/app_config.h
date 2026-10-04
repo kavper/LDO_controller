@@ -27,6 +27,15 @@
 #define VPRE_MIN_MV                        3000U
 #define VPRE_MAX_MV                        36000U
 #define VPRE_MARGIN_MV                     1500U
+/*
+ * While the output is on, never ask below this. VIN_LOW trips at
+ * CONSOLE_MINIMUM_VIN_MV (4500). 6000 leaves 1.5 V above that trip.
+ * Must match G4 BOARD_VPRE_VIN_FLOOR_V. CC may follow Vout down to
+ * this floor, not to VPRE_MIN_MV.
+ */
+#define VPRE_VIN_FLOOR_MV                  6000U
+/* Filtered CC must hold this long before the request leaves Vset + margin. */
+#define VPRE_CC_ENTER_MS                   100U
 
 /*
  * Bleeder request (G4 drives BLEED_ON; G0 has no GPIO on this revision).
