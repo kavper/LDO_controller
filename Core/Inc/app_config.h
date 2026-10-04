@@ -30,15 +30,13 @@
 
 /*
  * Bleeder request (G4 drives BLEED_ON; G0 has no GPIO on this revision).
- * With the output enabled, bleed below a 4.000 V setpoint so the analog
- * loops see a minimum load. Hysteresis avoids chatter around 4 V.
- * With the output disabled the bleeder still discharges VOUT to ~0.2 V.
+ * Measured Vout below 4.000 V turns the resistor on, output enabled or
+ * not. While the output is off it stays on at any voltage so a charged
+ * rail still discharges. Hysteresis releases it only once Vout is at
+ * or above 4.200 V with the output enabled.
  */
 #define BLEEDER_RUN_ON_BELOW_MV            4000U
 #define BLEEDER_RUN_OFF_ABOVE_MV           4200U
-#define BLEEDER_ON_THRESHOLD_MV            500U
-#define BLEEDER_OFF_THRESHOLD_MV           200U
-#define BLEEDER_OFF_CONFIRM_MS             500U
 
 /*
  * Fan duty request sent to G4 (G4 owns FAN_PWM / FAN_TACH). Linear between
