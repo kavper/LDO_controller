@@ -41,12 +41,14 @@
 #define BLEEDER_OFF_CONFIRM_MS             500U
 
 /*
- * Fan duty request sent to G4 (G4 owns FAN_PWM / FAN_TACH). Linear between
- * OFF and FULL using the hottest of MOSFET / bleeder / PSU-area NTCs.
+ * Fan duty request sent to G4 (G4 owns FAN_PWM / FAN_TACH).
+ * Duty is the higher of two lines: 0..150 W → 0..100 %, and
+ * 25.00..60.00 °C → 0..100 % on the hottest real NTC.
+ * A missing temperature uses the failsafe on that axis only.
  */
-#define FAN_REQUEST_OFF_CENTI_C            3000
-#define FAN_REQUEST_FULL_CENTI_C           5500
-#define FAN_REQUEST_MIN_PERCENT            20U
+#define FAN_MAP_POWER_FULL_MW              150000U
+#define FAN_MAP_TEMP_OFF_CENTI_C           2500
+#define FAN_MAP_TEMP_FULL_CENTI_C          6000
 #define FAN_REQUEST_FAILSAFE_PERCENT       40U
 
 /*

@@ -59,7 +59,8 @@ typedef enum
  *   4 x uint8_t:  fan_request_percent 0..100, power_kill, cc_cv, out_off
  *
  * bleed_request is what G4 must drive on BLEED_ON (G0 has no bleed GPIO).
- * fan_request_percent is what G4 must apply to FAN_PWM.
+ * fan_request_percent is the higher of the output-power and NTC maps.
+ * G4 applies it to FAN_PWM (the transistor inverts the pin).
  */
 
 void UART_Protocol_Init(UART_HandleTypeDef *huart);
