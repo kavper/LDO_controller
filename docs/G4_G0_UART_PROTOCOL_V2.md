@@ -71,7 +71,7 @@ does not replace it.
 | 36 | u32 | fault flags |
 | 40..47 | 4×u16 | raw temperature ADC |
 | 48..55 | 4×u16 | filtered temperature ADC |
-| 56..63 | 4×i16 | temperatures centi-°C (`INT16_MIN` invalid) |
+| 56..63 | 4×i16 | temperatures, °C×10 (`253` = 25.3 °C, `INT16_MIN` invalid) |
 | 64..67 | 4×u8 | fan %, power kill, CC/CV, raw OUT_OFF |
 
 If telemetry is stale for more than 500 ms, G4 marks the link stale and uses

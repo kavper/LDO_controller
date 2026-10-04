@@ -612,13 +612,30 @@ static void uart_rx_task(void)
   s_rx_kick = 0U;
 }
 
+/* Internal samples stay °C×100. The binary field is °C×10. */
+static int16_t uart_temperature_deci_c(int32_t centi_c)
+{
+  int32_t deci;
+
+  if ((centi_c == INT32_MIN) || (centi_c > 327670) || (centi_c < -327670))
+  {
+    return INT16_MIN;
+  }
+  deci = (centi_c >= 0) ? ((centi_c + 5) / 10) : ((centi_c - 5) / 10);
+  if ((deci > 32767) || (deci < -32767))
+  {
+    return INT16_MIN;
+  }
+  return (int16_t)deci;
+}
+
 static uint8_t uart_fill_telemetry(uint8_t *payload)
 {
   const Measurements_Data_t *measurements = Measurements_GetData();
   const Control_Status_t *control = Control_GetStatus();
   uint16_t index = 0U;
   uint8_t temperature;
-  int16_t centi;
+  int16_t deci;
 
   uart_put_u32_le(payload, &index, measurements->vout_mV);
   uart_put_u32_le(payload, &index, measurements->iout_mA);
@@ -645,17 +662,8 @@ static uint8_t uart_fill_telemetry(uint8_t *payload)
   }
   for (temperature = 0U; temperature < MEASUREMENTS_TEMPERATURE_COUNT; ++temperature)
   {
-    if ((measurements->temperature_centi_C[temperature] == INT32_MIN)
-        || (measurements->temperature_centi_C[temperature] > 32767)
-        || (measurements->temperature_centi_C[temperature] < -32767))
-    {
-      centi = INT16_MIN;
-    }
-    else
-    {
-      centi = (int16_t)measurements->temperature_centi_C[temperature];
-    }
-    uart_put_i16_le(payload, &index, centi);
+    deci = uart_temperature_deci_c(measurements->temperature_centi_C[temperature]);
+    uart_put_i16_le(payload, &index, deci);
   }
   payload[index++] = FanRequest_Percent();
   payload[index++] = (HAL_GPIO_ReadPin(POWER_KILL_GPIO_Port, POWER_KILL_Pin)
