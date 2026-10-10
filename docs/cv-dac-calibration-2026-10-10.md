@@ -1,3 +1,5 @@
+> Current/CC was calibrated subsequently: [cc-calibration-2026-10-10.md](cc-calibration-2026-10-10.md).
+
 # CV DAC/LDO calibration — this physical board
 
 Uses the same unloaded Fluke 87V sweep as VOUT ADC calibration.

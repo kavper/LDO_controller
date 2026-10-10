@@ -83,12 +83,35 @@ uint16_t Control_VoltageToDacRaw(uint32_t voltage_mV)
 
 uint16_t Control_CurrentToDacRaw(uint32_t current_mA)
 {
-  uint64_t numerator = (uint64_t)current_mA
-                     * CURRENT_SENSE_SHUNT_MILLIOHM
-                     * CURRENT_LIMIT_AMPLIFIER_GAIN * UINT16_MAX;
-  uint64_t denominator = 1000ULL * MCP3464_EXTERNAL_VREF_MV;
+  int64_t requested_uA = (int64_t)current_mA * 1000LL
+                      - DAC_CC_OUTPUT_OFFSET_UA;
+  uint64_t corrected_uA;
+  uint64_t numerator;
+  uint64_t denominator;
+  uint64_t code;
 
-  return (uint16_t)((numerator + (denominator / 2ULL)) / denominator);
+  if ((current_mA == 0U) || (requested_uA <= 0LL)
+      || (DAC_CC_OUTPUT_GAIN_PPM <= 0L))
+  {
+    return 0U;
+  }
+  corrected_uA = (uint64_t)((requested_uA * 1000000LL
+                         + DAC_CC_OUTPUT_GAIN_PPM / 2LL)
+                         / DAC_CC_OUTPUT_GAIN_PPM);
+  /* Bound intermediate arithmetic, then saturate instead of wrapping codes. */
+  if (corrected_uA > UINT32_MAX)
+  {
+    corrected_uA = UINT32_MAX;
+  }
+  numerator = corrected_uA * CURRENT_SENSE_SHUNT_MILLIOHM
+            * CURRENT_LIMIT_AMPLIFIER_GAIN * UINT16_MAX;
+  denominator = 1000000ULL * MCP3464_EXTERNAL_VREF_MV;
+  if (denominator == 0ULL)
+  {
+    return 0U;
+  }
+  code = (numerator + denominator / 2ULL) / denominator;
+  return (code > UINT16_MAX) ? UINT16_MAX : (uint16_t)code;
 }
 
 uint32_t Control_DacRawToMillivolts(uint16_t raw)
