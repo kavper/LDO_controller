@@ -48,20 +48,37 @@ static uint32_t control_ramp(uint32_t actual, uint32_t target, uint32_t step)
 
 uint16_t Control_VoltageToDacRaw(uint32_t voltage_mV)
 {
+  int64_t requested_uV = (int64_t)voltage_mV * 1000LL
+                      - DAC_CV_OUTPUT_OFFSET_UV;
+  uint64_t corrected_uV;
   uint64_t numerator;
   uint64_t denominator;
+  uint64_t code;
 
-  numerator = (uint64_t)voltage_mV
-            * (uint64_t)VOUT_DIFFAMP_FEEDBACK_OHM
+  /* DAC cannot command a negative voltage. Zero/OFF must remain code zero. */
+  if ((voltage_mV == 0U) || (requested_uV <= 0LL)
+      || (DAC_CV_OUTPUT_GAIN_PPM <= 0L))
+  {
+    return 0U;
+  }
+  corrected_uV = (uint64_t)((requested_uV * 1000000LL
+                         + DAC_CV_OUTPUT_GAIN_PPM / 2LL)
+                         / DAC_CV_OUTPUT_GAIN_PPM);
+  /* Bound before multiplication, including callers outside the UI range. */
+  if (corrected_uV > 36000000ULL)
+  {
+    corrected_uV = 36000000ULL;
+  }
+  numerator = corrected_uV * (uint64_t)VOUT_DIFFAMP_FEEDBACK_OHM
             * (uint64_t)UINT16_MAX;
   denominator = (uint64_t)VOUT_DIFFAMP_INPUT_OHM
-              * (uint64_t)MCP3464_EXTERNAL_VREF_MV;
-
+              * (uint64_t)MCP3464_EXTERNAL_VREF_MV * 1000ULL;
   if (denominator == 0ULL)
   {
     return 0U;
   }
-  return (uint16_t)((numerator + (denominator / 2ULL)) / denominator);
+  code = (numerator + denominator / 2ULL) / denominator;
+  return (code > UINT16_MAX) ? UINT16_MAX : (uint16_t)code;
 }
 
 uint16_t Control_CurrentToDacRaw(uint32_t current_mA)

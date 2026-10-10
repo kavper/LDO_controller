@@ -105,6 +105,12 @@
 #define MCP3464_DAC_CC_ZERO_RAW              0L
 #define MCP3464_DAC_CV_ZERO_RAW              0L
 
+/* This board: fitted DAC/CV output = nominal voltage * gain + offset.
+ * Invert this model when translating the requested voltage to a DAC code.
+ * Derived from Fluke 87V no-load readings at 1, 3, 5, 10, 20 and 25 V. */
+#define DAC_CV_OUTPUT_GAIN_PPM              1000094L
+#define DAC_CV_OUTPUT_OFFSET_UV                8320L
+
 /*
  * Analog front-end, G0 sheet 2026-08-30, no DMM trim.
  * VOUT U34: DC gain 15k/180k. VIN U30: 15k/(180k+33k).

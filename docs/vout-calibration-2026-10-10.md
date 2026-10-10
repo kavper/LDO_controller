@@ -1,3 +1,5 @@
+> CV DAC/LDO correction was subsequently added separately: [cv-dac-calibration-2026-10-10.md](cv-dac-calibration-2026-10-10.md).
+
 # VOUT measurement calibration — this physical board
 
 Reference: user readings from Fluke 87V, no external load, local sense.
