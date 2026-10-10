@@ -11,11 +11,9 @@
  * sit across the LDO as (Vset - Vout + dropout) * Iset. Once CC has held,
  * ask for measured Vout + dropout instead.
  *
- * The request never goes below vin_floor_mv. Tracking a collapsed Vout
- * down to vpre_min_mv walks the DCDC into VIN_LOW. It also never asks
- * above Vset + dropout: extra headroom is exactly the dissipation we are
- * trying to remove. A low Vset whose CV headroom is already under the
- * VIN floor stays at the floor, same as CV.
+ * CV follows Vset + margin; confirmed CC follows measured Vout + margin.
+ * The minimum is the margin itself, allowing CC down to zero output.
+ * Clamp to Vset + margin and the supported preregulator range.
  */
 static inline uint32_t Vpre_AddSaturating(uint32_t a, uint32_t b)
 {

@@ -24,16 +24,13 @@
 #define CONTROL_KILL_CONFIRM_MS            50U
 
 /* Preregulator request limits. TODO: confirm against the preregulator hardware. */
-#define VPRE_MIN_MV                        3000U
+#define VPRE_MIN_MV                        1500U
 #define VPRE_MAX_MV                        36000U
 #define VPRE_MARGIN_MV                     1500U
-/*
- * While the output is on, never ask below this. VIN_LOW trips at
- * CONSOLE_MINIMUM_VIN_MV (4500). 6000 leaves 1.5 V above that trip.
- * Must match G4 BOARD_VPRE_VIN_FLOOR_V. CC may follow Vout down to
- * this floor, not to VPRE_MIN_MV.
- */
-#define VPRE_VIN_FLOOR_MV                  6000U
+/* Zero-output CC still requests the 1.5 V LDO headroom.
+ * VIN sanity threshold is below that request; it must not impose a 6 V rail.
+ * Match G4 BOARD_VPRE_VIN_FLOOR_V. */
+#define VPRE_VIN_FLOOR_MV                  1500U
 /* Filtered CC must hold this long before the request leaves Vset + margin. */
 #define VPRE_CC_ENTER_MS                   100U
 
@@ -124,7 +121,7 @@
  * Telemetry is one consistent snapshot every 5 ms. A late task does not
  * emit the missed periods. */
 #define CONSOLE_TLM_PERIOD_MS                  5U
-#define CONSOLE_MINIMUM_VIN_MV              4500U
+#define CONSOLE_MINIMUM_VIN_MV              1000U
 #define CONSOLE_MAXIMUM_TEMPERATURE_CENTI_C 6000L
 #define CONSOLE_VOUT_OVERSHOOT_MIN_MV       1500U
 #define CONSOLE_VOUT_OVERSHOOT_PERCENT         10U
