@@ -93,7 +93,9 @@
 
 /* Nominal MCP3464 scale (DMM calibration later). */
 #define MCP3464_VIN_GAIN_PPM                 1000000L
-#define MCP3464_VOUT_GAIN_PPM                1000000L
+/* This board: Fluke 87V, 2026-10-10, six points 1-25 V.
+ * measurements_apply_calibration DIVIDES by this gain (inverse correction). */
+#define MCP3464_VOUT_GAIN_PPM                1015707L
 #define MCP3464_IOUT_GAIN_PPM                1000000L
 #define MCP3464_DAC_CC_GAIN_PPM              1000000L
 #define MCP3464_DAC_CV_GAIN_PPM              1000000L
