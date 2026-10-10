@@ -2,10 +2,12 @@
 
 #include "adc.h"
 #include "app_config.h"
+#include "main.h"
 #include "mcp3464.h"
+#include "meas_fresh.h"
+#include "ntc_temp.h"
 #include "spi.h"
 
-#include <math.h>
 #include <stdbool.h>
 #include <stdint.h>
 #include <string.h>
@@ -36,45 +38,11 @@ static McpMeasurement_t s_mcp_measurement;
 static bool s_mcp_discard_next;
 static uint8_t s_temperature_index;
 static bool s_temperature_conversion_active;
+static uint32_t s_mcp_stamp[MCP_MEAS_COUNT];
+static bool s_mcp_have[MCP_MEAS_COUNT];
+static uint32_t s_ntc_stamp[MEASUREMENTS_TEMPERATURE_COUNT];
+static bool s_ntc_have[MEASUREMENTS_TEMPERATURE_COUNT];
 static bool s_temperature_filter_valid[MEASUREMENTS_TEMPERATURE_COUNT];
-
-static int32_t measurements_temperature_raw_to_centi_C(uint16_t raw,
-                                                        uint32_t beta_K)
-{
-  const float adc_full_scale = 4095.0f;
-  const float nominal_temperature_K =
-      (float)TEMPERATURE_NTC_NOMINAL_KELVIN_X100 / 100.0f;
-  float ntc_voltage_mV;
-  float resistance_ratio;
-  float temperature_K;
-  float temperature_C;
-
-  if (raw == 0U)
-  {
-    return INT32_MIN;
-  }
-
-  ntc_voltage_mV = ((float)raw * (float)TEMPERATURE_ADC_REFERENCE_MV)
-                 / adc_full_scale;
-  if (ntc_voltage_mV >= (float)TEMPERATURE_DIVIDER_SUPPLY_MV)
-  {
-    return INT32_MIN;
-  }
-
-  /*
-   * Rpullup equals the nominal NTC resistance, so Rntc/R25 simplifies to
-   * Vntc / (Vdivider - Vntc).
-   */
-  resistance_ratio = ntc_voltage_mV
-                   / ((float)TEMPERATURE_DIVIDER_SUPPLY_MV - ntc_voltage_mV);
-  temperature_K = 1.0f
-                / ((1.0f / nominal_temperature_K)
-                   + (logf(resistance_ratio) / (float)beta_K));
-  temperature_C = temperature_K - 273.15f;
-  return (int32_t)((temperature_C >= 0.0f)
-                 ? (temperature_C * 100.0f + 0.5f)
-                 : (temperature_C * 100.0f - 0.5f));
-}
 
 static int32_t measurements_apply_calibration(int32_t raw, int32_t zero_raw,
                                               int32_t gain_ppm)
@@ -229,6 +197,9 @@ static void measurements_store_mcp(int32_t raw)
     default:
       break;
   }
+
+  s_mcp_have[s_mcp_measurement] = true;
+  s_mcp_stamp[s_mcp_measurement] = HAL_GetTick();
 }
 
 static void measurements_mcp_task(void)
@@ -271,7 +242,6 @@ static void measurements_temperature_task(void)
 {
   ADC_ChannelConfTypeDef config = {0};
   uint16_t raw;
-  int32_t filtered;
 
   if (!s_temperature_conversion_active)
   {
@@ -296,33 +266,100 @@ static void measurements_temperature_task(void)
   s_temperature_conversion_active = false;
   s_data.temperature_raw[s_temperature_index] = raw;
 
-  if (!s_temperature_filter_valid[s_temperature_index])
   {
-    s_data.temperature_filtered[s_temperature_index] = raw;
-    s_temperature_filter_valid[s_temperature_index] = true;
-  }
-  else
-  {
-    filtered = (int32_t)s_data.temperature_filtered[s_temperature_index];
-    filtered += ((int32_t)raw - filtered) / 8; /* IIR alpha = 1/8. */
-    s_data.temperature_filtered[s_temperature_index] = (uint16_t)filtered;
-  }
+    NtcChannel sample;
 
-  s_data.temperature_centi_C[s_temperature_index] =
-      measurements_temperature_raw_to_centi_C(
-          s_data.temperature_filtered[s_temperature_index],
-          (s_temperature_index <= MEASUREMENTS_TEMP_AMBIENT)
-              ? TEMPERATURE_NTC_BETA_103AT2_K
-              : TEMPERATURE_NTC_BETA_NCP18_K);
+    sample.filtered = s_data.temperature_filtered[s_temperature_index];
+    sample.valid = s_temperature_filter_valid[s_temperature_index];
+    sample.centi_c = s_data.temperature_centi_C[s_temperature_index];
+    Ntc_ChannelApply(&sample, raw, TEMPERATURE_ADC_REFERENCE_MV,
+                     TEMPERATURE_DIVIDER_SUPPLY_MV,
+                     (s_temperature_index <= MEASUREMENTS_TEMP_AMBIENT)
+                         ? TEMPERATURE_NTC_BETA_103AT2_K
+                         : TEMPERATURE_NTC_BETA_NCP18_K);
+    s_data.temperature_filtered[s_temperature_index] = sample.filtered;
+    s_temperature_filter_valid[s_temperature_index] = sample.valid;
+    s_data.temperature_centi_C[s_temperature_index] = sample.centi_c;
+  }
+  s_ntc_have[s_temperature_index] = true;
+  s_ntc_stamp[s_temperature_index] = HAL_GetTick();
 
   s_temperature_index = (uint8_t)((s_temperature_index + 1U)
                                   % MEASUREMENTS_TEMPERATURE_COUNT);
 }
 
+static void measurements_drop_mcp(McpMeasurement_t which)
+{
+  switch (which)
+  {
+    case MCP_MEAS_VOUT_DIFF:
+      s_data.vout_diff_raw = 0;
+      s_data.vout_mV = 0U;
+      break;
+    case MCP_MEAS_IOUT_DIFF:
+      s_data.iout_diff_raw = 0;
+      s_data.iout_mA = 0U;
+      break;
+    case MCP_MEAS_VIN_DIFF:
+      s_data.vin_diff_raw = 0;
+      s_data.vin_mV = 0U;
+      break;
+    case MCP_MEAS_DAC_CC_SINGLE_ENDED:
+      s_data.dac_cc_readback_raw = 0;
+      s_data.dac_cc_readback_mV = 0U;
+      break;
+    case MCP_MEAS_DAC_CV_SINGLE_ENDED:
+      s_data.dac_cv_readback_raw = 0;
+      s_data.dac_cv_readback_mV = 0U;
+      break;
+    default:
+      break;
+  }
+}
+
+static void measurements_age(uint32_t now_ms)
+{
+  uint8_t index;
+
+  for (index = 0U; index < (uint8_t)MCP_MEAS_COUNT; ++index)
+  {
+    if (!Meas_StampFresh(now_ms, s_mcp_stamp[index], s_mcp_have[index],
+                         MEAS_MCP_STALE_MS))
+    {
+      measurements_drop_mcp((McpMeasurement_t)index);
+      s_mcp_have[index] = false;
+    }
+  }
+  for (index = 0U; index < MEASUREMENTS_TEMPERATURE_COUNT; ++index)
+  {
+    if (!Meas_StampFresh(now_ms, s_ntc_stamp[index], s_ntc_have[index],
+                         MEAS_NTC_STALE_MS))
+    {
+      s_data.temperature_centi_C[index] = INT32_MIN;
+      s_data.temperature_raw[index] = 0U;
+      s_data.temperature_filtered[index] = 0U;
+      s_temperature_filter_valid[index] = false;
+      s_ntc_have[index] = false;
+    }
+  }
+}
+
 void Measurements_Init(void)
 {
+  uint8_t temperature;
+
   memset(&s_data, 0, sizeof(s_data));
   memset(s_temperature_filter_valid, 0, sizeof(s_temperature_filter_valid));
+  memset(s_mcp_stamp, 0, sizeof(s_mcp_stamp));
+  memset(s_mcp_have, 0, sizeof(s_mcp_have));
+  memset(s_ntc_stamp, 0, sizeof(s_ntc_stamp));
+  memset(s_ntc_have, 0, sizeof(s_ntc_have));
+  /* 0 would be a real 0.00 °C. Unconverted channels stay invalid. */
+  for (temperature = 0U; temperature < MEASUREMENTS_TEMPERATURE_COUNT;
+       ++temperature)
+  {
+    s_data.temperature_centi_C[temperature] = INT32_MIN;
+  }
   s_temperature_index = 0U;
   s_temperature_conversion_active = false;
   s_mcp_measurement = MCP_MEAS_VOUT_DIFF;
@@ -339,6 +376,13 @@ void Measurements_Task(void)
 {
   measurements_temperature_task();
   measurements_mcp_task();
+  measurements_age(HAL_GetTick());
+}
+
+bool Measurements_CriticalFresh(void)
+{
+  return Meas_CriticalFresh(HAL_GetTick(), s_mcp_stamp, s_mcp_have,
+                            s_ntc_stamp, s_ntc_have);
 }
 
 const Measurements_Data_t *Measurements_GetData(void)

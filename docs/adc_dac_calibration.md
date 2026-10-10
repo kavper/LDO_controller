@@ -11,7 +11,7 @@ nominal schematic gains in `app_config.h`; a new DMM cal comes later.
 | IOUT | INA241A1 ×10, R108 50 mΩ | 0.5 V/A at ADC |
 | CC analog | U32A 10 k / 1 k | ×10 vs shunt |
 | MCP CH0/1 | DAC CV / CC | 1:1 vs 3V_REFR |
-| NTC | 10 k to 3V_REFR, ADC VREF+ = 3V3R | |
+| NTC | 10 k to 3V_REFR, ADC VREF+ = 3V_REFR (3.000 V) | |
 
 # Legacy calibration (old PCB)
 

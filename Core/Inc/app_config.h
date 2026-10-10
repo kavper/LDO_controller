@@ -24,29 +24,36 @@
 #define CONTROL_KILL_CONFIRM_MS            50U
 
 /* Preregulator request limits. TODO: confirm against the preregulator hardware. */
-#define VPRE_MIN_MV                        3000U
+#define VPRE_MIN_MV                        1500U
 #define VPRE_MAX_MV                        36000U
 #define VPRE_MARGIN_MV                     1500U
+/* Zero-output CC still requests the 1.5 V LDO headroom.
+ * VIN sanity threshold is below that request; it must not impose a 6 V rail.
+ * Match G4 BOARD_VPRE_VIN_FLOOR_V. */
+#define VPRE_VIN_FLOOR_MV                  1500U
+/* Filtered CC must hold this long before the request leaves Vset + margin. */
+#define VPRE_CC_ENTER_MS                   100U
 
 /*
  * Bleeder request (G4 drives BLEED_ON; G0 has no GPIO on this revision).
- * With the output enabled, bleed below a 4.000 V setpoint so the analog
- * loops see a minimum load. Hysteresis avoids chatter around 4 V.
- * With the output disabled the bleeder still discharges VOUT to ~0.2 V.
+ * Measured Vout below 4.000 V turns the resistor on, output enabled or
+ * not. While the output is off it stays on at any voltage so a charged
+ * rail still discharges. Hysteresis releases it only once Vout is at
+ * or above 4.200 V with the output enabled.
  */
 #define BLEEDER_RUN_ON_BELOW_MV            4000U
 #define BLEEDER_RUN_OFF_ABOVE_MV           4200U
-#define BLEEDER_ON_THRESHOLD_MV            500U
-#define BLEEDER_OFF_THRESHOLD_MV           200U
-#define BLEEDER_OFF_CONFIRM_MS             500U
 
 /*
- * Fan duty request sent to G4 (G4 owns FAN_PWM / FAN_TACH). Linear between
- * OFF and FULL using the hottest of MOSFET / bleeder / PSU-area NTCs.
+ * Fan duty request sent to G4 (G4 owns FAN_PWM / FAN_TACH).
+ * Duty is the higher of two lines: 0..150 W → 0..100 %, and
+ * 25.00..60.00 °C → 0..100 % on the hottest real NTC.
+ * Every NTC missing, or the MOSFET NTC missing, uses the failsafe on
+ * that axis. A hotter remaining sensor or real power can still go higher.
  */
-#define FAN_REQUEST_OFF_CENTI_C            3000
-#define FAN_REQUEST_FULL_CENTI_C           5500
-#define FAN_REQUEST_MIN_PERCENT            20U
+#define FAN_MAP_POWER_FULL_MW              150000U
+#define FAN_MAP_TEMP_OFF_CENTI_C           2500
+#define FAN_MAP_TEMP_FULL_CENTI_C          6000
 #define FAN_REQUEST_FAILSAFE_PERCENT       40U
 
 /*
@@ -73,10 +80,11 @@
 #define MCP3464_EXTERNAL_VREF_MV            3000U
 
 /*
- * NTC: 10 k pull-up to 3V_REFR, STM32 ADC1 VREF+ is +3V3R.
+ * NTC: 10 k pull-up to 3V_REFR. STM32 ADC1 VREF+ is that same net
+ * (MCP3464 REFIN+, 3.000 V), not +3V3R.
  * RT1/RT2 103AT-2; T3/T4 10 k NTC.
  */
-#define TEMPERATURE_ADC_REFERENCE_MV        3300U
+#define TEMPERATURE_ADC_REFERENCE_MV        3000U
 #define TEMPERATURE_DIVIDER_SUPPLY_MV       3000U
 #define TEMPERATURE_NTC_NOMINAL_OHM         10000U
 #define TEMPERATURE_NTC_NOMINAL_KELVIN_X100 29815U
@@ -85,8 +93,11 @@
 
 /* Nominal MCP3464 scale (DMM calibration later). */
 #define MCP3464_VIN_GAIN_PPM                 1000000L
-#define MCP3464_VOUT_GAIN_PPM                1000000L
-#define MCP3464_IOUT_GAIN_PPM                1000000L
+/* This board: Fluke 87V, 2026-10-10, six points 1-25 V.
+ * measurements_apply_calibration DIVIDES by this gain (inverse correction). */
+#define MCP3464_VOUT_GAIN_PPM                1015707L
+/* Fluke 87V, CC sweep 0.1-3 A, 2026-10-10; raw conversion divides by gain. */
+#define MCP3464_IOUT_GAIN_PPM                1015022L
 #define MCP3464_DAC_CC_GAIN_PPM              1000000L
 #define MCP3464_DAC_CV_GAIN_PPM              1000000L
 #define MCP3464_VOUT_ZERO_RAW                0L
@@ -94,6 +105,15 @@
 #define MCP3464_VIN_ZERO_RAW                 0L
 #define MCP3464_DAC_CC_ZERO_RAW              0L
 #define MCP3464_DAC_CV_ZERO_RAW              0L
+
+/* This board: fitted DAC/CV output = nominal voltage * gain + offset.
+ * Invert this model when translating the requested voltage to a DAC code.
+ * Derived from Fluke 87V no-load readings at 1, 3, 5, 10, 20 and 25 V. */
+#define DAC_CV_OUTPUT_GAIN_PPM              1000094L
+#define DAC_CV_OUTPUT_OFFSET_UV                8320L
+/* Actual CC current = nominal DAC current * gain + offset; invert in control. */
+#define DAC_CC_OUTPUT_GAIN_PPM              1006617L
+#define DAC_CC_OUTPUT_OFFSET_UA                 947L
 
 /*
  * Analog front-end, G0 sheet 2026-08-30, no DMM trim.
@@ -109,9 +129,11 @@
 #define CURRENT_SENSE_AMPLIFIER_GAIN         10L
 #define CURRENT_LIMIT_AMPLIFIER_GAIN         10L
 
-/* Interactive console safety thresholds. */
-#define CONSOLE_TLM_PERIOD_MS                100U
-#define CONSOLE_MINIMUM_VIN_MV              4500U
+/* Interactive console safety thresholds.
+ * Telemetry is one consistent snapshot every 5 ms. A late task does not
+ * emit the missed periods. */
+#define CONSOLE_TLM_PERIOD_MS                  5U
+#define CONSOLE_MINIMUM_VIN_MV              1000U
 #define CONSOLE_MAXIMUM_TEMPERATURE_CENTI_C 6000L
 #define CONSOLE_VOUT_OVERSHOOT_MIN_MV       1500U
 #define CONSOLE_VOUT_OVERSHOOT_PERCENT         10U

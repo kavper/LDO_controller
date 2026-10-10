@@ -6,6 +6,7 @@
 #include "fan_request.h"
 #include "main.h"
 #include "measurements.h"
+#include "ntc_temp.h"
 #include "uart_protocol.h"
 
 #include <ctype.h>
@@ -86,18 +87,13 @@ static bool console_parse_milli(const char **cursor, uint32_t *value)
 
 static bool console_temperatures_safe(const Measurements_Data_t *data)
 {
-  uint8_t index;
-
-  for (index = 0U; index < MEASUREMENTS_TEMPERATURE_COUNT; ++index)
+  if (data == NULL)
   {
-    if ((data->temperature_centi_C[index] == INT32_MIN)
-        || (data->temperature_centi_C[index]
-            >= CONSOLE_MAXIMUM_TEMPERATURE_CENTI_C))
-    {
-      return false;
-    }
+    return false;
   }
-  return true;
+  return Ntc_ReadingsSafe(data->temperature_centi_C,
+                          MEASUREMENTS_TEMPERATURE_COUNT,
+                          CONSOLE_MAXIMUM_TEMPERATURE_CENTI_C);
 }
 
 static const char *console_preflight_fault(void)
@@ -107,6 +103,10 @@ static const char *console_preflight_fault(void)
   if (!s_mcp_ok || !s_dac_ok)
   {
     return "ADC_OR_DAC_INIT";
+  }
+  if (!Measurements_CriticalFresh())
+  {
+    return "MEAS_LOST";
   }
   if (HAL_GPIO_ReadPin(PGOOD_5V_IN_GPIO_Port, PGOOD_5V_IN_Pin)
       != PGOOD_ASSERTED_LEVEL)
@@ -199,6 +199,11 @@ static const char *console_runtime_fault_condition(uint32_t now,
   {
     *confirm_ms = 0U;
     return "HW_INIT";
+  }
+  if (!Measurements_CriticalFresh())
+  {
+    *confirm_ms = 0U;
+    return "MEAS_LOST";
   }
   if (HAL_GPIO_ReadPin(PGOOD_5V_IN_GPIO_Port, PGOOD_5V_IN_Pin)
       != PGOOD_ASSERTED_LEVEL)
@@ -482,8 +487,8 @@ void UART_Console_Task(uint32_t now)
 
     Control_SetOutputEnabled(false);
     s_fault = fault;
-    /* Push the fault to G4 immediately instead of waiting for the 100 ms slot. */
-    UART_Protocol_QueueTelemetry();
+    /* Safety frame now. The 5 ms snapshot must not replace this one. */
+    UART_Protocol_QueueFaultTelemetry();
     (void)snprintf(response, sizeof(response),
                    "NACK FAULT=%s; OUTPUT FORCED OFF\r\n", fault);
     (void)UART_Protocol_QueueText(response);

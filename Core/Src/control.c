@@ -3,7 +3,9 @@
 #include "app_config.h"
 #include "dac8562.h"
 #include "main.h"
+#include "measurements.h"
 #include "output_ctrl.h"
+#include "vpre_request.h"
 
 #include <limits.h>
 
@@ -12,6 +14,7 @@ static Control_Mode_t s_filtered_mode;
 static GPIO_PinState s_mode_candidate;
 static uint8_t s_mode_stable_ms;
 static uint8_t s_kill_ms;
+static uint16_t s_cc_fold_ms;
 static uint16_t s_last_cv_raw;
 static uint16_t s_last_cc_raw;
 
@@ -45,30 +48,70 @@ static uint32_t control_ramp(uint32_t actual, uint32_t target, uint32_t step)
 
 uint16_t Control_VoltageToDacRaw(uint32_t voltage_mV)
 {
+  int64_t requested_uV = (int64_t)voltage_mV * 1000LL
+                      - DAC_CV_OUTPUT_OFFSET_UV;
+  uint64_t corrected_uV;
   uint64_t numerator;
   uint64_t denominator;
+  uint64_t code;
 
-  numerator = (uint64_t)voltage_mV
-            * (uint64_t)VOUT_DIFFAMP_FEEDBACK_OHM
+  /* DAC cannot command a negative voltage. Zero/OFF must remain code zero. */
+  if ((voltage_mV == 0U) || (requested_uV <= 0LL)
+      || (DAC_CV_OUTPUT_GAIN_PPM <= 0L))
+  {
+    return 0U;
+  }
+  corrected_uV = (uint64_t)((requested_uV * 1000000LL
+                         + DAC_CV_OUTPUT_GAIN_PPM / 2LL)
+                         / DAC_CV_OUTPUT_GAIN_PPM);
+  /* Bound before multiplication, including callers outside the UI range. */
+  if (corrected_uV > 36000000ULL)
+  {
+    corrected_uV = 36000000ULL;
+  }
+  numerator = corrected_uV * (uint64_t)VOUT_DIFFAMP_FEEDBACK_OHM
             * (uint64_t)UINT16_MAX;
   denominator = (uint64_t)VOUT_DIFFAMP_INPUT_OHM
-              * (uint64_t)MCP3464_EXTERNAL_VREF_MV;
-
+              * (uint64_t)MCP3464_EXTERNAL_VREF_MV * 1000ULL;
   if (denominator == 0ULL)
   {
     return 0U;
   }
-  return (uint16_t)((numerator + (denominator / 2ULL)) / denominator);
+  code = (numerator + denominator / 2ULL) / denominator;
+  return (code > UINT16_MAX) ? UINT16_MAX : (uint16_t)code;
 }
 
 uint16_t Control_CurrentToDacRaw(uint32_t current_mA)
 {
-  uint64_t numerator = (uint64_t)current_mA
-                     * CURRENT_SENSE_SHUNT_MILLIOHM
-                     * CURRENT_LIMIT_AMPLIFIER_GAIN * UINT16_MAX;
-  uint64_t denominator = 1000ULL * MCP3464_EXTERNAL_VREF_MV;
+  int64_t requested_uA = (int64_t)current_mA * 1000LL
+                      - DAC_CC_OUTPUT_OFFSET_UA;
+  uint64_t corrected_uA;
+  uint64_t numerator;
+  uint64_t denominator;
+  uint64_t code;
 
-  return (uint16_t)((numerator + (denominator / 2ULL)) / denominator);
+  if ((current_mA == 0U) || (requested_uA <= 0LL)
+      || (DAC_CC_OUTPUT_GAIN_PPM <= 0L))
+  {
+    return 0U;
+  }
+  corrected_uA = (uint64_t)((requested_uA * 1000000LL
+                         + DAC_CC_OUTPUT_GAIN_PPM / 2LL)
+                         / DAC_CC_OUTPUT_GAIN_PPM);
+  /* Bound intermediate arithmetic, then saturate instead of wrapping codes. */
+  if (corrected_uA > UINT32_MAX)
+  {
+    corrected_uA = UINT32_MAX;
+  }
+  numerator = corrected_uA * CURRENT_SENSE_SHUNT_MILLIOHM
+            * CURRENT_LIMIT_AMPLIFIER_GAIN * UINT16_MAX;
+  denominator = 1000000ULL * MCP3464_EXTERNAL_VREF_MV;
+  if (denominator == 0ULL)
+  {
+    return 0U;
+  }
+  code = (numerator + denominator / 2ULL) / denominator;
+  return (code > UINT16_MAX) ? UINT16_MAX : (uint16_t)code;
 }
 
 uint32_t Control_DacRawToMillivolts(uint16_t raw)
@@ -132,28 +175,34 @@ static void control_update_dac(void)
 
 static void control_update_vpre_request(void)
 {
-  uint32_t request;
+  bool cc_confirmed;
 
-  if (!s_status.output_enabled)
+  /*
+   * Mode is already filtered. Wait a bit longer before folding so a load
+   * step that only kisses CC does not start the prereg down. Leaving CC
+   * drops the timer at once; G4 then slews VIN back up to Vset + dropout.
+   */
+  if (s_status.output_enabled && (s_filtered_mode == CONTROL_MODE_CC))
   {
-    request = VPRE_MIN_MV;
+    if (s_cc_fold_ms < VPRE_CC_ENTER_MS)
+    {
+      ++s_cc_fold_ms;
+    }
   }
   else
   {
-    /*
-     * Keep VIN headroom at Vset + dropout in CV and CC. Tracking VOUT down
-     * in current limit collapses the preregulator and looks like a trip.
-     * Analog CC already holds Iset; firmware must not fold the source.
-     */
-    request = s_status.voltage_applied_mV + VPRE_MARGIN_MV;
+    s_cc_fold_ms = 0U;
   }
 
-  s_status.vpre_request_mV = control_clamp_u32(request, VPRE_MIN_MV, VPRE_MAX_MV);
-
-  /*
-   * The STM32G4 preregulator should apply its own slew rate and hysteresis,
-   * for example about -0.3 V / +1.0 V relative to vpre_request_mV.
-   */
+  cc_confirmed = (s_cc_fold_ms >= VPRE_CC_ENTER_MS);
+  s_status.vpre_request_mV = Vpre_RequestMv(s_status.output_enabled,
+                                            cc_confirmed,
+                                            s_status.voltage_applied_mV,
+                                            Measurements_GetData()->vout_mV,
+                                            VPRE_MARGIN_MV,
+                                            VPRE_VIN_FLOOR_MV,
+                                            VPRE_MIN_MV,
+                                            VPRE_MAX_MV);
 }
 
 void Control_Init(void)
@@ -170,6 +219,7 @@ void Control_Init(void)
   s_mode_candidate = HAL_GPIO_ReadPin(CC_CV_STATE_GPIO_Port, CC_CV_STATE_Pin);
   s_mode_stable_ms = 0U;
   s_kill_ms = 0U;
+  s_cc_fold_ms = 0U;
   s_last_cv_raw = UINT16_MAX;
   s_last_cc_raw = UINT16_MAX;
 

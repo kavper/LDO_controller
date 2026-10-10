@@ -207,7 +207,7 @@ NACK FAULT=POWER_KILL; OUTPUT FORCED OFF
 
 `FAULT=` names: `HW_INIT`, `PGOOD_LOST`, `POWER_KILL`, `VIN_LOW`, `VOUT_HARD`, `VOUT_HIGH`, `TEMP_HIGH`.
 
-**Current limit is not a fault.** Analog CC holds `iset` and lets `vout` fall below `vset`. TLM `mode=2` / `cccv=1` is informational. G4 must **not** send `OUT OFF`, drop PB6, or fold the DCDC voltage because of CC.
+**Current limit is not a fault.** Analog CC holds `iset` and lets `vout` fall below `vset`. TLM `mode=2` / `cccv=1` is informational. G4 must **not** send `OUT OFF` or drop PERMIT because of CC. G0's `vpre` then falls to measured Vout + 1.5 V, floored at 6 V, so the LDO does not keep the whole (Vset − Vout) across itself.
 
 On `POWER_KILL` / DCDC collapse: G4 must also drop **PB6 immediately** (hardware kill). Do not wait for UART.
 
@@ -336,7 +336,7 @@ HAL_UART_Transmit(huart3, (uint8_t *)"OUT OFF\r\n", 9, 10);
 - [ ] Commands: only `SET V=… I=…`, `OUT ON`, `OUT OFF`
 - [ ] Parse `TLM` every ~200 ms; forward unmodified
 - [ ] Permit (`kill=0`) **before** `OUT ON`
-- [ ] `mode=2` / `cccv=1` = analog CC; keep VIN at Vset+dropout, do not trip
+- [ ] `mode=2` / `cccv=1` = analog CC; do not trip. Honor `vpre` down to Vout+dropout, never below 6 V
 - [ ] No binary protocol, no HELP/STATUS
 
 G0 host notes: `docs/uart_console.md`. Hardware/CubeMX: `docs/G4_LDO_UART.md`.
